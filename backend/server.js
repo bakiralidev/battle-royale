@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import os from 'os';
 import { GameStateManager, GAME_CONFIG } from './game-state.js';
 
 // Absolute path resolution for ES modules
@@ -212,11 +213,27 @@ setInterval(() => {
   });
 }, TICK_INTERVAL);
 
-// Start server
-httpServer.listen(PORT, () => {
+// Helper to get local network IP address
+function getLocalIp() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
+// Start server listening on all network interfaces
+httpServer.listen(PORT, '0.0.0.0', () => {
+  const ip = getLocalIp();
   console.log(`===============================================`);
   console.log(`  BATTLE ROYALE ROOM SERVER RUNNING SUCCESSFULLY!`);
   console.log(`  Local URL: http://localhost:${PORT}`);
+  console.log(`  Network URL (for friends): http://${ip}:${PORT}`);
   console.log(`  Press Ctrl+C to stop.`);
   console.log(`===============================================`);
 });
