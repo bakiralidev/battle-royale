@@ -1,0 +1,2 @@
+# Bu Node.js loyihasi hisoblanadi (requirements.txt shart emas).
+# Node.js dependencies: backend/package.json faylida joylashgan.

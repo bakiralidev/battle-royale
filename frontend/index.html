@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle Royale Arena - 2D Web Game</title>
+  <meta name="description" content="JavaScript va Canvas yordamida yaratilgan dinamik 2D Battle Royale o'yini. Dushmanlar bilan jang qiling va xavfsiz zonada tirik qoling!">
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <main id="app">
+    <!-- Game Lobby Screen -->
+    <section id="lobby">
+      <h2>⚔️ Battle Royale</h2>
+      
+      <!-- Room Selection & Info Setup -->
+      <div id="lobbySetup" class="lobby-form">
+        <label for="nameInput">Ismingiz</label>
+        <input type="text" id="nameInput" placeholder="Ismingizni kiriting" maxlength="12" value="Player1">
+        
+        <label>O'yinchi rangi</label>
+        <div class="color-row" id="colorRow"></div>
+        
+        <div class="lobby-divider"></div>
+        
+        <!-- Create Room Section -->
+        <div class="action-section">
+          <h3>Yangi o'yin yaratish</h3>
+          <div class="row-flex">
+            <div class="check-container">
+              <input type="checkbox" id="useBotsCheckbox" checked>
+              <label for="useBotsCheckbox">Botlar qo'shilsinmi?</label>
+            </div>
+            <div class="input-container" id="botCountContainer">
+              <label for="botCountInput">Soni:</label>
+              <input type="number" id="botCountInput" min="0" max="11" value="11">
+            </div>
+          </div>
+          <button id="createRoomBtn">Yangi xona yaratish</button>
+        </div>
+        
+        <div class="lobby-divider"></div>
+        
+        <!-- Join Room Section -->
+        <div class="action-section">
+          <h3>Mavjud o'yinga qo'shilish</h3>
+          <div class="row-flex">
+            <input type="text" id="roomCodeInput" placeholder="Xona kodini kiriting (4 ta raqam)" maxlength="4">
+            <button id="joinRoomBtn">Qo'shilish</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Room Waiting Room (Kutish Zali) -->
+      <div id="lobbyWaiting" class="lobby-form" style="display: none;">
+        <h3 class="waiting-title">🎮 KUTISH ZALI</h3>
+        
+        <div class="room-code-display">
+          Xona kodi: <span id="displayRoomCode">----</span>
+        </div>
+        
+        <div class="lobby-players-section">
+          <label>Ulanishgan o'yinchilar:</label>
+          <div id="lobbyPlayersList"></div>
+        </div>
+        
+        <div id="roomSettingsInfo" class="room-settings-badge">
+          Botlar: Yoqilgan (11 ta)
+        </div>
+        
+        <button id="startBtn">O'yinni boshlash</button>
+        <div id="waitingStatusMsg" class="waiting-msg">Xona egasi o'yinni boshlashini kuting...</div>
+        <button id="leaveRoomBtn" class="sec-btn">Xonadan chiqish</button>
+      </div>
+    </section>
+
+    <!-- Game Arena Screen Wrapper -->
+    <section id="gameWrapper">
+      <header id="hud">
+        <div class="hud-item">Zona: <span id="zoneTimer">60s</span></div>
+        <div class="hud-item">Tirik: <span id="aliveCount">12</span>/12</div>
+        <div class="hud-item">Qurol: <span id="weaponInfo">Yo'q</span></div>
+        <div class="hud-item">HP: <span id="hpInfo">100</span></div>
+      </header>
+      
+      <!-- Focusable Canvas for key events -->
+      <canvas id="gameCanvas" width="680" height="480" tabindex="1"></canvas>
+      
+      <footer id="playersPanel"></footer>
+      
+      <div id="keyHint">← → ↑ ↓ yoki WASD tugmalari bilan harakatlaning</div>
+      
+      <!-- Overlay Screen (Win / Game Over) -->
+      <div id="overlay">
+        <h2 id="overlayTitle">O'yin tugadi!</h2>
+        <p id="overlayMsg"></p>
+        <button id="restartBtn">Qaytadan o'ynash</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Socket.IO Client Library -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- ES6 Game Module Loader -->
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>
