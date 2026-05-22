@@ -21,3 +21,9 @@ Thumbs.db
 .gemini/
 .system_generated/
 *.log
+
+# Database
+*.sqlite
+*.sqlite3
+backend/battle_royale.db
+*.db

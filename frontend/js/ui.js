@@ -27,16 +27,21 @@ export class UIManager {
     this.selectedColor = colors[defaultIndex];
 
     colors.forEach((color, index) => {
-      const btn = document.createElement('div');
+      const btn = document.createElement('button');
       btn.className = 'color-btn' + (index === defaultIndex ? ' selected' : '');
       btn.style.backgroundColor = color;
+      btn.style.background = color;
       btn.title = colorNames[index];
+      btn.type = 'button';
       
       btn.onclick = () => {
         const buttons = this.colorRow.querySelectorAll('.color-btn');
         buttons.forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         this.selectedColor = color;
+        // Update avatar preview if present
+        const avatar = document.getElementById('setupAvatar');
+        if (avatar) avatar.style.background = color;
       };
       
       this.colorRow.appendChild(btn);
@@ -53,7 +58,7 @@ export class UIManager {
 
   showGame() {
     this.lobby.style.display = 'none';
-    this.gameWrapper.style.display = 'block';
+    this.gameWrapper.style.display = 'flex';
   }
 
   showLobby() {

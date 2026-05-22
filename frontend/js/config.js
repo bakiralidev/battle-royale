@@ -45,14 +45,15 @@ export const BOT_NAMES = [
 ];
 
 export const WEAPON_TYPES = [
-  { name: 'Pichoq', dmg: 15, color: '#aaa', emoji: '🔪' },
-  { name: 'Pistolet', dmg: 25, color: '#f39c12', emoji: '🔫' },
-  { name: 'Miltiq', dmg: 35, color: '#e74c3c', emoji: '🪃' }
+  { name: 'Pichoq', dmg: 20, color: '#aaa', emoji: '🔪', isRanged: false, maxAmmo: 0 },
+  { name: 'Pistolet', dmg: 15, color: '#f39c12', emoji: '🔫', isRanged: true, maxAmmo: 6 },
+  { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6 },
+  { name: 'Sniper', dmg: 35, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3 }
 ];
 
 export const GAME_CONFIG = {
-  WIDTH: 680,
-  HEIGHT: 480,
+  WIDTH: 2720,
+  HEIGHT: 1920,
   MAX_BOTS: 11,
   TOTAL_PLAYERS: 12,
   ZONE_DURATION: 60, // seconds per zone phase
@@ -60,10 +61,11 @@ export const GAME_CONFIG = {
   ZONE_DAMAGE_RATE: 8, // damage per second out of zone
   PUSHBACK_FORCE: 2.5,
   ATTACK_COOLDOWN: 1200, // ms between attacks
-  MAX_MEDKIT_SPAWN: 5,
-  MAX_WEAPON_SPAWN: 14,
+  MAX_MEDKIT_SPAWN: 15,
+  MAX_WEAPON_SPAWN: 35,
+  MAX_SHIELD_SPAWN: 10,
   ITEM_LIFETIME: 10, // seconds
-  MEDKIT_HEAL: 25, // how much HP medkit restores (original was +10, let's make it 25 for better gameplay)
-  PLAYER_SPEED: 1.8,
-  BOT_SPEED: 1.2
+  MEDKIT_HEAL: 25,
+  PLAYER_SPEED: 2.8,
+  BOT_SPEED: 1.8
 };

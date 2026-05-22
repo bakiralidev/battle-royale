@@ -3,105 +3,758 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Battle Royale Arena - 2D Web Game</title>
-  <meta name="description" content="JavaScript va Canvas yordamida yaratilgan dinamik 2D Battle Royale o'yini. Dushmanlar bilan jang qiling va xavfsiz zonada tirik qoling!">
+  <title>Battle Royale Arena — 2D Multiplayer</title>
+  <meta name="description" content="Real-time 2D Battle Royale o'yini. Ro'yxatdan o'ting, do'stlar qo'shing, reyting taxtasida o'rningizni egallang!">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
+
   <main id="app">
-    <!-- Game Lobby Screen -->
-    <section id="lobby">
-      <h2>⚔️ Battle Royale</h2>
-      
-      <!-- Room Selection & Info Setup -->
-      <div id="lobbySetup" class="lobby-form">
-        <label for="nameInput">Ismingiz</label>
-        <input type="text" id="nameInput" placeholder="Ismingizni kiriting" maxlength="12" value="Player1">
-        
-        <label>O'yinchi rangi</label>
-        <div class="color-row" id="colorRow"></div>
-        
-        <div class="lobby-divider"></div>
-        
-        <!-- Create Room Section -->
-        <div class="action-section">
-          <h3>Yangi o'yin yaratish</h3>
-          <div class="row-flex">
-            <div class="check-container">
-              <input type="checkbox" id="useBotsCheckbox" checked>
-              <label for="useBotsCheckbox">Botlar qo'shilsinmi?</label>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- HOME PAGE (Landing)                                 -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section id="homePage">
+
+      <!-- Top Navigation -->
+      <nav class="home-nav">
+        <div class="nav-logo">⚔️ Battle Royale</div>
+        <div class="nav-center" id="navPlayerInfo"></div>
+        <div class="nav-actions">
+          <!-- Shown when NOT logged in -->
+          <div id="guestNavBtns">
+            <button id="navLoginBtn" class="btn-outline">Kirish</button>
+            <button id="navRegisterBtn" class="btn-primary-sm">Ro'yxatdan o'tish</button>
+          </div>
+          <!-- Shown when logged in -->
+          <div id="userNavBtns" style="display:none;">
+            <button id="leaderboardBtnHome" class="nav-btn" title="Reyting">🏆</button>
+            <button id="friendsBtnHome" class="nav-btn" title="Do'stlar">
+              👥 <span id="friendRequestsBadge" class="badge" style="display:none;">0</span>
+            </button>
+            <button id="historyBtnHome" class="nav-btn" title="Tarix">📋</button>
+            <button id="settingsBtnHome" class="nav-btn" title="Sozlamalar">⚙️</button>
+            <button id="logoutBtn" class="nav-btn logout-btn" title="Chiqish">🚪</button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Hero Section -->
+      <div class="hero-section">
+        <div class="hero-particles">
+          <div class="particle"></div>
+          <div class="particle"></div>
+          <div class="particle"></div>
+          <div class="particle"></div>
+          <div class="particle"></div>
+        </div>
+
+        <div class="hero-content">
+          <div class="hero-main-left">
+            <div class="hero-badges-row" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+              <div class="hero-badge">🔥 Real-time Multiplayer</div>
+              <button id="rulesBtn" class="hero-badge rules-btn">📖 Qoidalar va Ma'lumotlar</button>
             </div>
-            <div class="input-container" id="botCountContainer">
-              <label for="botCountInput">Soni:</label>
-              <input type="number" id="botCountInput" min="0" max="11" value="11">
+            <h1 class="hero-title">
+              <span class="title-line1">BATTLE</span>
+              <span class="title-line2">ROYALE</span>
+            </h1>
+            <p class="hero-subtitle">
+              Raqiblaringizni yengib, oxirgi sog' qoling.<br>
+              Do'stlaringizni taklif qiling va reyting taxtasini zabt eting!
+            </p>
+          </div>
+
+          <div class="hero-bottom-actions" style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-top: 30px;">
+            <div class="hero-stats">
+              <div class="hstat">🎮 Multiplayer</div>
+              <div class="hstat">⚔️ Real-time Jang</div>
+              <div class="hstat">🏆 Reyting Tizimi</div>
+              <div class="hstat">👥 Do'stlar Tizimi</div>
+            </div>
+
+            <!-- CTA Buttons — changes based on auth state -->
+            <div style="display: flex; gap: 14px;">
+              <div id="heroGuestBtns" class="hero-cta">
+                <button id="heroPlayBtn" class="btn-hero">▶ O'ynashni Boshlash</button>
+                <button id="heroGuestBtn" class="btn-hero-outline">👾 Mehmon sifatida kirish</button>
+              </div>
+
+              <div id="heroUserBtns" class="hero-cta" style="display:none;">
+                <button id="heroEnterLobbyBtn" class="btn-hero">▶ O'yinni boshlash</button>
+                <button id="heroLeaderboardBtn" class="btn-hero-outline">🏆 Reyting ko'rish</button>
+              </div>
             </div>
           </div>
-          <button id="createRoomBtn">Yangi xona yaratish</button>
         </div>
-        
-        <div class="lobby-divider"></div>
-        
-        <!-- Join Room Section -->
-        <div class="action-section">
-          <h3>Mavjud o'yinga qo'shilish</h3>
-          <div class="row-flex">
-            <input type="text" id="roomCodeInput" placeholder="Xona kodini kiriting (4 ta raqam)" maxlength="4">
-            <button id="joinRoomBtn">Qo'shilish</button>
+
+        <div class="hero-right-widgets" style="position: relative; flex: 1; min-height: 500px; height: 100%;">
+          <!-- Promo: Smiley Creator -->
+          <div id="homeSmileyPromo" class="smiley-creator-promo clickable-promo">
+            <div class="scp-big-smiley" id="promoRandomSmiley">😊</div>
+            <div class="scp-text-only">O'z smayligingizni yarating!</div>
+          </div>
+
+          <!-- Hero Visual -->
+          <div class="hero-visual" style="margin-top: 0; position: absolute; left: 55%; top: 50%; transform: translate(-50%, -50%); cursor: default;">
+          <div class="arena-preview">
+            <img src="assets/hero_arena.png" class="arena-img" alt="Battle Arena" />
+            <div class="arena-ring ring1"></div>
+            <div class="arena-ring ring2"></div>
+            <div class="arena-center-dot"></div>
+            <div class="arena-player ap1">⚔️</div>
+            <div class="arena-player ap2">🛡️</div>
+            <div class="arena-player ap3">🗡️</div>
           </div>
         </div>
       </div>
+      </div>
+      
+      <!-- Features Section -->
+      <div class="features-section">
+        <div class="feature-card">
+          <div class="fc-icon">⚔️</div>
+          <h3>Real-time Jang</h3>
+          <p>45 fps server bilan sinxronlashtirilgan tezkor multiplayer o'yin tajribasi</p>
+        </div>
+        <div class="feature-card">
+          <div class="fc-icon">📈</div>
+          <h3>Daraja Tizimi</h3>
+          <p>XP yig'ib, Yangi Boshlovchidan Afsonaviy darajagacha ko'tariling</p>
+        </div>
+        <div class="feature-card">
+          <div class="fc-icon">👥</div>
+          <h3>Do'stlar</h3>
+          <p>Do'stlaringizni qo'shing, so'rovlar yuboring va birgalikda o'ynang</p>
+        </div>
+        <div class="feature-card">
+          <div class="fc-icon">🤖</div>
+          <h3>Bot Rejimi</h3>
+          <p>Yolg'iz ham o'ynang — AI botlar bilan mashq qiling</p>
+        </div>
+      </div>
 
-      <!-- Room Waiting Room (Kutish Zali) -->
-      <div id="lobbyWaiting" class="lobby-form" style="display: none;">
-        <h3 class="waiting-title">🎮 KUTISH ZALI</h3>
-        
-        <div class="room-code-display">
-          Xona kodi: <span id="displayRoomCode">----</span>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- LOBBY SCREEN                                        -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section id="lobby" style="display:none;">
+
+      <!-- Top Nav (in lobby) -->
+      <nav class="top-nav">
+        <button id="backHomeBtn" class="nav-btn">← Bosh sahifa</button>
+        <div class="nav-logo">⚔️ Battle Royale</div>
+        <div class="nav-actions">
+          <div id="navPlayerInfo2" class="nav-user-area"></div>
+          <button id="leaderboardBtn" class="nav-btn" title="Reyting">🏆</button>
+          <button id="friendsBtn" class="nav-btn" title="Do'stlar">
+            👥 <span id="friendRequestsBadge2" class="badge" style="display:none;"></span>
+          </button>
+          <button id="historyBtn" class="nav-btn" title="Tarix">📋</button>
+          <button id="settingsBtnLobby" class="nav-btn" title="Sozlamalar">⚙️</button>
+          <button id="logoutBtnLobby" class="nav-btn logout-btn" title="Chiqish">🚪</button>
         </div>
-        
-        <div class="lobby-players-section">
-          <label>Ulanishgan o'yinchilar:</label>
-          <div id="lobbyPlayersList"></div>
+      </nav>
+
+      <!-- Lobby Content -->
+      <div class="lobby-content">
+
+        <!-- Room Setup Card -->
+        <div id="lobbySetup" class="lobby-card">
+          <h2>🎮 O'yin Boshqaruvi</h2>
+
+          <div class="player-setup-row">
+            <div class="setup-avatar" id="setupAvatar">P</div>
+            <div class="setup-fields">
+              <div class="field-group">
+                <label for="nameInput">O'yindagi ism</label>
+                <input type="text" id="nameInput" placeholder="Ismingizni kiriting" maxlength="12">
+              </div>
+            </div>
+          </div>
+
+          <div class="field-group" style="margin-top: 16px;">
+            <label>Rang</label>
+            <div class="color-row" id="colorRow"></div>
+          </div>
+
+          <div class="lobby-divider"></div>
+
+          <div class="action-section">
+            <h3>➕ Yangi xona yaratish</h3>
+            <div class="row-flex">
+              <div class="check-container">
+                <input type="checkbox" id="useBotsCheckbox" checked>
+                <label for="useBotsCheckbox">Botlar qo'shilsinmi?</label>
+              </div>
+              <div class="input-container" id="botCountContainer">
+                <label for="botCountInput">Soni:</label>
+                <input type="number" id="botCountInput" min="0" max="11" value="11">
+              </div>
+            </div>
+            <button id="createRoomBtn" class="btn-primary">⚔️ Yangi xona yaratish</button>
+          </div>
+
+          <div class="lobby-divider"></div>
+
+          <div class="action-section">
+            <h3>🚪 Mavjud xonaga kirish</h3>
+            <div class="row-flex">
+              <input type="text" id="roomCodeInput" placeholder="Xona kodi (4 raqam)" maxlength="4">
+              <button id="joinRoomBtn" class="btn-secondary">Kirish</button>
+            </div>
+          </div>
         </div>
-        
-        <div id="roomSettingsInfo" class="room-settings-badge">
-          Botlar: Yoqilgan (11 ta)
+
+        <!-- Waiting Room Card -->
+        <div id="lobbyWaiting" class="lobby-card" style="display:none;">
+          <h2 class="waiting-title">🎮 KUTISH ZALI</h2>
+
+          <div class="room-code-display">
+            Xona kodi: <span id="displayRoomCode" class="room-code-num">----</span>
+            <button id="copyCodeBtn" class="copy-btn" title="Nusxalash">📋</button>
+          </div>
+
+          <div class="lobby-players-section">
+            <label>Ulanishgan o'yinchilar:</label>
+            <div id="lobbyPlayersList"></div>
+          </div>
+
+          <div id="roomSettingsInfo" class="room-settings-badge">Botlar: Yoqilgan (11 ta)</div>
+
+          <button id="startBtn" class="btn-primary">▶ O'yinni boshlash</button>
+          <div id="waitingStatusMsg" class="waiting-msg">Xona egasi o'yinni boshlashini kuting...</div>
+          <button id="leaveRoomBtn" class="btn-ghost">← Xonadan chiqish</button>
         </div>
-        
-        <button id="startBtn">O'yinni boshlash</button>
-        <div id="waitingStatusMsg" class="waiting-msg">Xona egasi o'yinni boshlashini kuting...</div>
-        <button id="leaveRoomBtn" class="sec-btn">Xonadan chiqish</button>
+
       </div>
     </section>
 
-    <!-- Game Arena Screen Wrapper -->
-    <section id="gameWrapper">
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- GAME ARENA SCREEN                                   -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <section id="gameWrapper" style="display:none;">
       <header id="hud">
         <div class="hud-item">Zona: <span id="zoneTimer">60s</span></div>
         <div class="hud-item">Tirik: <span id="aliveCount">12</span>/12</div>
         <div class="hud-item">Qurol: <span id="weaponInfo">Yo'q</span></div>
         <div class="hud-item">HP: <span id="hpInfo">100</span></div>
       </header>
-      
-      <!-- Focusable Canvas for key events -->
+
+      <!-- Solo bot match controls -->
+      <div id="soloControls" style="display: none;">
+        <button id="soloExitBtn" class="solo-ctrl-btn exit">🚪 Chiqish</button>
+        <button id="soloRestartBtn" class="solo-ctrl-btn restart">🔄 Qayta boshlash</button>
+      </div>
+
       <canvas id="gameCanvas" width="680" height="480" tabindex="1"></canvas>
-      
+
       <footer id="playersPanel"></footer>
-      
-      <div id="keyHint">← → ↑ ↓ yoki WASD tugmalari bilan harakatlaning</div>
-      
-      <!-- Overlay Screen (Win / Game Over) -->
-      <div id="overlay">
-        <h2 id="overlayTitle">O'yin tugadi!</h2>
-        <p id="overlayMsg"></p>
-        <button id="restartBtn">Qaytadan o'ynash</button>
+      <div id="keyHint">← → ↑ ↓ yoki WASD bilan harakatlaning</div>
+
+      <div id="overlay" style="display:none;">
+        <div class="overlay-content">
+          <h2 id="overlayTitle">O'yin tugadi!</h2>
+          <p id="overlayMsg"></p>
+          <div id="overlayStatsUpdate" class="overlay-stats-update" style="display:none;"></div>
+          <button id="restartBtn" class="btn-primary">🔄 Lobbyga qaytish</button>
+        </div>
       </div>
     </section>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- LOGIN MODAL                                         -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="loginModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box auth-modal">
+        <div class="modal-header">
+          <h3>🔐 Tizimga Kirish</h3>
+          <button class="panel-close modal-close-btn" data-modal="loginModal">✕</button>
+        </div>
+        <form id="loginForm" class="auth-form">
+          <div class="field-group">
+            <label>Username</label>
+            <input type="text" id="loginUsername" placeholder="usernamingizni kiriting" autocomplete="username">
+          </div>
+          <div class="field-group">
+            <label>Parol</label>
+            <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+          </div>
+          <p id="loginError" class="auth-error"></p>
+          <button type="submit" id="loginSubmitBtn" class="btn-primary">Kirish</button>
+        </form>
+        <div class="modal-footer-link">
+          Hisobingiz yo'qmi?
+          <button class="text-link" id="switchToRegister">Ro'yxatdan o'ting →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- REGISTER MODAL                                      -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="registerModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box auth-modal">
+        <div class="modal-header">
+          <h3>🎮 Ro'yxatdan O'tish</h3>
+          <button class="panel-close modal-close-btn" data-modal="registerModal">✕</button>
+        </div>
+        <form id="registerForm" class="auth-form">
+          <div class="field-group">
+            <label>Username <span class="hint">(3-20 ta belgi, harf/raqam/_)</span></label>
+            <input type="text" id="regUsername" placeholder="o'yindagi nomingiz" autocomplete="username">
+          </div>
+          <div class="field-group">
+            <label>Ko'rsatiladigan ism <span class="hint">(ixtiyoriy)</span></label>
+            <input type="text" id="regDisplayName" placeholder="o'yinda ko'rinadigan ism">
+          </div>
+          <div class="field-group">
+            <label>Parol <span class="hint">(kamida 6 ta belgi)</span></label>
+            <input type="password" id="regPassword" placeholder="••••••••" autocomplete="new-password">
+          </div>
+          <div class="field-group">
+            <label>Parolni tasdiqlang</label>
+            <input type="password" id="regPassword2" placeholder="••••••••" autocomplete="new-password">
+          </div>
+          <div class="field-group">
+            <label>O'yinchi rangi</label>
+            <div id="authColorRow" class="color-row"></div>
+          </div>
+          <p id="registerError" class="auth-error"></p>
+          <button type="submit" id="registerSubmitBtn" class="btn-primary">Ro'yxatdan o'tish</button>
+        </form>
+        <div class="modal-footer-link">
+          Allaqachon hisobingiz bormi?
+          <button class="text-link" id="switchToLogin">Kirish →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- FRIENDS PANEL (Slide-in)                           -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <aside id="friendsPanel" class="side-panel">
+      <div class="panel-header">
+        <h3>👥 Do'stlar</h3>
+        <button id="closeFriendsBtn" class="panel-close">✕</button>
+      </div>
+      <div class="panel-tabs">
+        <button id="friendTabList" class="panel-tab active">Do'stlar</button>
+        <button id="friendTabRequests" class="panel-tab">So'rovlar</button>
+        <button id="friendTabSearch" class="panel-tab">Qidirish</button>
+      </div>
+      <div id="friendsListPanel" class="panel-body">
+        <div id="friendsList"></div>
+      </div>
+      <div id="friendRequestsPanel" class="panel-body" style="display:none;">
+        <div id="friendRequestsList"></div>
+      </div>
+      <div id="friendSearchPanel" class="panel-body" style="display:none;">
+        <div class="search-box">
+          <input type="text" id="friendSearchInput" placeholder="Username qidirish...">
+          <button id="friendSearchBtn" class="search-go">🔍</button>
+        </div>
+        <div id="friendSearchResults"></div>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- LEADERBOARD MODAL                                   -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="leaderboardModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>🏆 Reyting Taxtasi</h3>
+          <button id="closeLeaderboardBtn" class="panel-close">✕</button>
+        </div>
+        <div id="leaderboardContent" class="leaderboard-list"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- HISTORY MODAL                                       -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="historyModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>📋 Faollik Tarixi</h3>
+          <button id="closeHistoryBtn" class="panel-close">✕</button>
+        </div>
+        <div class="panel-tabs">
+          <button id="historyTabGames" class="panel-tab active">O'yinlar</button>
+          <button id="historyTabSessions" class="panel-tab">Seanslar & Qurilmalar</button>
+        </div>
+        <div id="historyContent" class="history-list"></div>
+        <div id="sessionsContent" class="history-list" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ -->
+    <!-- SETTINGS MODAL                                      -->
+    <!-- ═══════════════════════════════════════════════════ -->
+    <div id="settingsModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>⚙️ Profil Sozlamalari</h3>
+          <button class="panel-close modal-close-btn" data-modal="settingsModal">✕</button>
+        </div>
+        <div class="modal-body-scroll" style="overflow-y: auto; padding: 22px 26px; display: flex; flex-direction: column; gap: 18px; max-height: 70vh;">
+          
+          <!-- Avatar section -->
+          <div class="settings-section">
+            <h4 style="font-size: 13px; color: var(--text3); text-transform: uppercase; margin-bottom: 8px;">Profil Rasmi</h4>
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <div id="settingsAvatarPreview" class="setup-avatar" style="width: 72px; height: 72px; font-size: 28px;">U</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <input type="file" id="avatarFileInput" accept="image/*" style="display: none;">
+                <button type="button" id="uploadAvatarBtn" class="btn-secondary" style="padding: 8px 14px; font-size: 13px;">Rasm yuklash</button>
+                <button type="button" id="removeAvatarBtn" class="btn-ghost" style="padding: 8px 14px; font-size: 13px; color: var(--red); border-color: rgba(233,69,96,0.2);">O'chirish</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Display Name -->
+          <div class="field-group">
+            <label for="settingsDisplayName">Ko'rsatiladigan ism <span class="hint">(unikal bo'lishi kerak, 3-20 belgi)</span></label>
+            <input type="text" id="settingsDisplayName" placeholder="Yangi taxallusingiz" maxlength="20">
+          </div>
+
+          <!-- Profile Color -->
+          <div class="field-group">
+            <label>Profil Rangi</label>
+            <div id="settingsColorRow" class="color-row"></div>
+          </div>
+
+          <!-- Emojis Section -->
+          <div class="settings-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h4 style="font-size: 13px; color: var(--text3); text-transform: uppercase; margin: 0;">Smilelar Sozlamalari</h4>
+              <button type="button" id="settingsSmileyCreatorBtn" class="btn-primary-sm" style="padding: 6px 12px; font-size: 12px; margin: 0;">🎨 Smaylik yaratgich</button>
+            </div>
+            
+            <!-- Quick Preset Grid -->
+            <div style="margin-bottom: 12px;">
+              <label style="font-size: 12px; color: var(--text2); display: block; margin-bottom: 6px;">Tayyor to'plamlar (Presetlar)</label>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="emoji-preset-btn btn-outline" data-preset="classic" style="padding: 6px 12px; font-size: 12px; cursor: pointer;">Klassik</button>
+                <button type="button" class="emoji-preset-btn btn-outline" data-preset="cool" style="padding: 6px 12px; font-size: 12px; cursor: pointer;">Salobatli</button>
+                <button type="button" class="emoji-preset-btn btn-outline" data-preset="scary" style="padding: 6px 12px; font-size: 12px; cursor: pointer;">Qo'rqinchli</button>
+                <button type="button" class="emoji-preset-btn btn-outline" data-preset="funny" style="padding: 6px 12px; font-size: 12px; cursor: pointer;">Kulgili</button>
+              </div>
+            </div>
+
+            <!-- Custom Emoji Matrix -->
+            <div class="emoji-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+              <div class="field-group">
+                <label for="emojiHappy">Tola jon (Happy) 😊</label>
+                <select id="emojiHappy" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="😊">😊 Oddiy Kulgi</option>
+                  <option value="😀">😀 Katta Kulgi</option>
+                  <option value="😎">😎 Zo'r (Cool)</option>
+                  <option value="😈">😈 Yovuz Kulgi</option>
+                  <option value="😜">😜 Hazilomuz</option>
+                  <option value="🤡">🤡 Masxaraboz</option>
+                  <option value="🦁">🦁 Arslon</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="emojiNeutral">Kamroq shikast (Neutral) 😐</label>
+                <select id="emojiNeutral" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="😐">😐 Betaraf</option>
+                  <option value="🙂">🙂 Mayin kulgi</option>
+                  <option value="🧐">🧐 Ziyorak</option>
+                  <option value="👽">👽 O'zga sayyoralik</option>
+                  <option value="🤖">🤖 Robot</option>
+                  <option value="🦊">🦊 Tulki</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="emojiSad">Kam jon (Sad) 😢</label>
+                <select id="emojiSad" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="😢">😢 Hafa (Yig'lash)</option>
+                  <option value="😭">😭 Dod-voy</option>
+                  <option value="😰">😰 Havotir</option>
+                  <option value="🥴">🥴 Sarxush</option>
+                  <option value="💀">💀 Bosh chanoq</option>
+                  <option value="🥺">🥺 Yalingan</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="emojiMelee">Yaqin qurol (Melee) 🗡️</label>
+                <select id="emojiMelee" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="😈">😈 Yovuzlik (1-daraja)</option>
+                  <option value="😠">😠 Achchig'langan</option>
+                  <option value="🥷">🥷 Ninja</option>
+                  <option value="👹">👹 Maxluq</option>
+                  <option value="😤">😤 Mag'rur</option>
+                  <option value="😼">😼 Ayyor mushuk</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="emojiGun">Pistolet/Aftamat (Gun) 🔫</label>
+                <select id="emojiGun" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="😡">😡 G'azabdor (2-daraja)</option>
+                  <option value="🤬">🤬 So'kinayotgan</option>
+                  <option value="🤠">🤠 Kovboy</option>
+                  <option value="👽">👽 Kosmik mergan</option>
+                  <option value="🤖">🤖 Terminator</option>
+                  <option value="🦁">🦁 Yirtqich</option>
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="emojiSniper">Sniper (Sniper) 🎯</label>
+                <select id="emojiSniper" style="background: rgba(255,255,255,0.04); border: 1.5px solid var(--border2); border-radius: var(--r-sm); color: var(--text); padding: 8px 12px; outline: none; cursor: pointer;">
+                  <option value="🤬">🤬 So'kinayotgan (3-daraja)</option>
+                  <option value="👿">👿 Yovuz maxluq</option>
+                  <option value="💀">💀 O'lim farishtasi</option>
+                  <option value="🧐">🧐 Teleskopik nigoh</option>
+                  <option value="🥷">🥷 Sokin qotil</option>
+                  <option value="🦅">🦅 Burgut ko'z</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+
+          <p id="settingsError" class="auth-error"></p>
+          <p id="settingsSuccess" style="display:none; color: var(--green); background: rgba(46,204,113,0.08); border: 1px solid rgba(46,204,113,0.2); padding: 10px 14px; border-radius: var(--r-sm); font-size: 13px;"></p>
+        </div>
+        <div class="modal-footer" style="padding: 16px 26px 22px; border-top: 1px solid var(--border2); display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0;">
+          <button type="button" id="closeSettingsBtn" class="btn-secondary" style="margin: 0;">Yopish</button>
+          <button type="button" id="saveSettingsBtn" class="btn-primary" style="margin: 0; padding: 12px 24px;">Saqlash</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Smiley Creator Modal -->
+    <div id="smileyCreatorModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box smiley-creator-box">
+        <div class="modal-header">
+          <h3>🎨 Smaylik Yaratuvchi</h3>
+          <button id="closeSmileyCreatorBtn" class="panel-close">✕</button>
+        </div>
+        
+        <div class="sm-creator-layout">
+          <!-- Left Panel: Live Preview -->
+          <div class="sm-preview-panel">
+            <div class="sm-canvas-container checkerboard-bg">
+              <canvas id="smileyPreviewCanvas" width="256" height="256"></canvas>
+            </div>
+            <p class="sm-preview-tip">Ushbu smaylik o'yinda o'yinchilarga ko'rinadi.</p>
+          </div>
+          
+          <!-- Right Panel: Editor Controls & Tabs -->
+          <div class="sm-controls-panel">
+            <!-- Tabs Header -->
+            <div class="sm-tabs-header">
+              <button type="button" class="sm-tab-btn active" data-tab="design">🎨 Dizayn</button>
+              <button type="button" class="sm-tab-btn" data-tab="upload">📸 Rasm yuklash</button>
+              <button type="button" class="sm-tab-btn" data-tab="saved">🎒 Mening smayliklarim</button>
+            </div>
+            
+            <!-- Tab contents -->
+            <div class="sm-tab-content-container">
+              
+              <!-- Tab 1: Design -->
+              <div id="smTabDesign" class="sm-tab-content">
+                <div class="sm-options-grid">
+                  <div class="field-group">
+                    <label for="smColorInput">Baza Rangi</label>
+                    <input type="color" id="smColorInput" value="#ffcc00" style="width: 100%; height: 38px; border: none; border-radius: var(--r-sm); cursor: pointer; padding: 0;">
+                  </div>
+                  <div class="field-group">
+                    <label for="smEars">Quloqlar</label>
+                    <select id="smEars">
+                      <option value="none">Yo'q</option>
+                      <option value="round">Dumaloq</option>
+                      <option value="elf">Elf quloqlari</option>
+                      <option value="cat">Mushuk quloqlari</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smHair">Sochlar</label>
+                    <select id="smHair">
+                      <option value="none">Yo'q</option>
+                      <option value="short">Kalta soch</option>
+                      <option value="spiky">Tikan soch</option>
+                      <option value="afro">Afro soch</option>
+                      <option value="curly">Jingalak soch</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smMask">Niqoblar / Yuz bo'yoqlari</label>
+                    <select id="smMask">
+                      <option value="none">Yo'q</option>
+                      <option value="hero">Superqahramon niqobi</option>
+                      <option value="blush">Qizarish (Blush)</option>
+                      <option value="scar">Yara izi (Scar)</option>
+                      <option value="ninja">Ninja niqobi</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smEyes">Ko'zlar</label>
+                    <select id="smEyes">
+                      <option value="normal">Oddiy</option>
+                      <option value="angry">G'azabli</option>
+                      <option value="cool">Ko'zoynakli (Cool)</option>
+                      <option value="cute">Yurakchali (Cute)</option>
+                      <option value="closed">Yopiq</option>
+                      <option value="dead">O'lik (X_X)</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smEyebrows">Qoshlar</label>
+                    <select id="smEyebrows">
+                      <option value="none">Yo'q</option>
+                      <option value="normal">Oddiy</option>
+                      <option value="angry">G'azabli</option>
+                      <option value="sad">G'amgin</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smEyelashes">Kipriklar</label>
+                    <select id="smEyelashes">
+                      <option value="none">Yo'q</option>
+                      <option value="normal">Oddiy</option>
+                      <option value="cute">Yoqimtoy</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smMouth">Og'iz</label>
+                    <select id="smMouth">
+                      <option value="happy">Kulgili</option>
+                      <option value="neutral">Betaraf</option>
+                      <option value="sad">Mahzun</option>
+                      <option value="shocked">Hayratda</option>
+                      <option value="tongue">Til ko'rsatgan</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smMustache">Mo'ylov / Soqol</label>
+                    <select id="smMustache">
+                      <option value="none">Yo'q</option>
+                      <option value="classic">Klassik mo'ylov</option>
+                      <option value="goatee">Echki soqol</option>
+                      <option value="beard">To'liq soqol</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="smHat">Bosh kiyim</label>
+                    <select id="smHat">
+                      <option value="none">Yo'q</option>
+                      <option value="cap">Kepka</option>
+                      <option value="cowboy">Kovboy shapkasi</option>
+                      <option value="crown">Toj (Crown)</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div class="sm-save-section" style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px;">
+                  <div class="field-group">
+                    <label for="smSaveName">Smaylik nomi</label>
+                    <input type="text" id="smSaveName" placeholder="Mening ajoyib smayligim" maxlength="24">
+                  </div>
+                  <button type="button" id="smSaveVectorBtn" class="btn-primary" style="margin: 0; width: 100%;">Saqlash va faollashtirish</button>
+                </div>
+              </div>
+              
+              <!-- Tab 2: Upload -->
+              <div id="smTabUpload" class="sm-tab-content" style="display:none;">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div class="field-group">
+                    <label for="smUploadInput">Rasm tanlang <span class="hint">(PNG, JPG)</span></label>
+                    <input type="file" id="smUploadInput" accept="image/*" style="width: 100%;">
+                  </div>
+                  
+                  <div style="display: flex; gap: 14px; align-items: center;">
+                    <div class="sm-crop-canvas-container checkerboard-bg" style="width: 180px; height: 180px; position: relative; border-radius: var(--r-md); overflow: hidden; border: 1.5px dashed var(--border2); flex-shrink: 0;">
+                      <canvas id="smileyCropCanvas" width="180" height="180" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1;">
+                      <div class="field-group">
+                        <label for="smScaleInput">Kattalashtirish (Zoom)</label>
+                        <input type="range" id="smScaleInput" min="0.5" max="3.0" step="0.05" value="1.0" style="width: 100%;">
+                      </div>
+                      <div class="field-group">
+                        <label for="smOffsetX">X bo'yicha siljish</label>
+                        <input type="range" id="smOffsetX" min="-150" max="150" step="1" value="0" style="width: 100%;">
+                      </div>
+                      <div class="field-group">
+                        <label for="smOffsetY">Y bo'yicha siljish</label>
+                        <input type="range" id="smOffsetY" min="-150" max="150" step="1" value="0" style="width: 100%;">
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="field-group">
+                    <label for="smUploadSaveName">Foto nomi</label>
+                    <input type="text" id="smUploadSaveName" placeholder="Mening rasmim" maxlength="24">
+                  </div>
+                  
+                  <button type="button" id="smSaveCropBtn" class="btn-primary" style="margin: 0; width: 100%;">Qirqib olish va faollashtirish</button>
+                </div>
+              </div>
+              
+              <!-- Tab 3: Saved -->
+              <div id="smTabSaved" class="sm-tab-content" style="display:none;">
+                <div id="savedSmileysGrid" class="sm-saved-grid"></div>
+              </div>
+              
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backdrop for side panel -->
+    <div id="panelBackdrop" class="panel-backdrop" style="display:none;"></div>
+
   </main>
 
-  <!-- Socket.IO Client Library -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- RULES MODAL                                         -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="rulesModal" style="display: none;">
+    <div class="modal" style="max-width: 600px; padding: 30px;">
+      <div class="modal-header">
+        <h3>📖 O'yin Qoidalari va Ma'lumotlar</h3>
+        <button class="icon-btn" id="closeRulesBtn" style="color: var(--text-muted); font-size: 24px; background: none; border: none; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="max-height: 60vh; overflow-y: auto; padding-right: 10px; line-height: 1.6;">
+        <h4 style="color: var(--accent); margin-top: 0;">🎯 Maqsad</h4>
+        <p>Battle Royale arenasida raqiblaringizni yengib, eng oxirgi tirik qolgan o'yinchiga aylanish!</p>
+        
+        <h4 style="color: var(--accent);">🕹 Boshqaruv</h4>
+        <ul style="padding-left: 20px;">
+          <li><b>W, A, S, D</b> yoki <b>Strelkalar</b> - Harakatlanish</li>
+          <li><b>Sichqoncha</b> - Nishonga olish</li>
+          <li><b>Sichqoncha Chap tugmasi</b> - Otish / Zarba berish</li>
+        </ul>
+
+        <h4 style="color: var(--accent);">🌪 Xavfsiz Zona (Safe Zone)</h4>
+        <p>O'yin xaritasidagi <b>Ko'k xalqa</b> xavfsiz zona hisoblanadi. Vaqt o'tishi bilan xalqa qisqarib boradi. Agar siz xalqa (zona) dan tashqarida qolsangiz, sog'lig'ingiz (HP) tez kamayishni boshlaydi.</p>
+
+        <h4 style="color: var(--accent);">🔫 Qurollar va Aslahalar</h4>
+        <ul style="padding-left: 20px;">
+          <li><b>Pichoq (🔪)</b>: Yaqin masofadan kuchli zarba beradi.</li>
+          <li><b>To'pponcha (🔫)</b>: O'rtacha tezlik, uzoq masofa.</li>
+          <li><b>Miltiq (M4)</b>: Tez o't ochadi.</li>
+          <li><b>Snayper (🎯)</b>: Uzoq masofaga juda katta zarar yetkazadi, lekin sekin otadi.</li>
+          <li><b>Qalqon (🛡️)</b>: Vaqtinchalik zararlardan himoya qiladi.</li>
+          <li><b>Aptechka (💊)</b>: Sog'lig'ingizni tiklaydi.</li>
+        </ul>
+
+        <h4 style="color: var(--accent);">👥 Do'stlar va Reyting</h4>
+        <p>Do'stlaringizga so'rov yuboring, ularni o'zingiz yaratgan xonaga (4 harfli kod orqali) taklif qiling. Har bir o'yinda qatnashib, g'alaba qozonish orqali <b>Reyting (Leaderboard)</b> da yuqoriga ko'tariling va yangi levellarni oching!</p>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
-  <!-- ES6 Game Module Loader -->
   <script type="module" src="js/game.js"></script>
 </body>
 </html>
