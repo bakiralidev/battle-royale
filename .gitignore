@@ -27,3 +27,5 @@ Thumbs.db
 *.sqlite3
 backend/battle_royale.db
 *.db
+*.db-wal
+*.db-shm

@@ -1,5 +1,91 @@
 // Server-Side Game Engine and State Manager (Room-based)
 
+class SpatialHashGrid {
+  constructor(cellSize, width, height) {
+    this.cellSize = cellSize;
+    this.width = width;
+    this.height = height;
+    this.cells = new Map();
+  }
+
+  hash(x, y) {
+    return `${Math.floor(x / this.cellSize)},${Math.floor(y / this.cellSize)}`;
+  }
+
+  insert(client) {
+    const key = this.hash(client.x, client.y);
+    if (!this.cells.has(key)) this.cells.set(key, []);
+    this.cells.get(key).push(client);
+  }
+
+  clear() {
+    this.cells.clear();
+  }
+
+  query(x, y, radius) {
+    const results = [];
+    const minCol = Math.floor((x - radius) / this.cellSize);
+    const maxCol = Math.floor((x + radius) / this.cellSize);
+    const minRow = Math.floor((y - radius) / this.cellSize);
+    const maxRow = Math.floor((y + radius) / this.cellSize);
+
+    for (let c = minCol; c <= maxCol; c++) {
+      for (let r = minRow; r <= maxRow; r++) {
+        const cell = this.cells.get(`${c},${r}`);
+        if (cell) results.push(...cell);
+      }
+    }
+    return results;
+  }
+}
+
+export class ServerObstacle {
+  constructor(x, y, radius, type) {
+    this.id = Math.random();
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.type = type; // 'bush'
+  }
+  serialize() {
+    return {
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      r: this.radius,
+      t: this.type
+    };
+  }
+}
+
+export class ServerVehicle {
+  constructor(x, y, type = 'hoverboard') {
+    this.id = Math.random();
+    this.x = x;
+    this.y = y;
+    this.type = type;
+    this.hp = 150;
+    this.maxHp = 150;
+    this.radius = 25;
+    this.angle = 0;
+    this.speed = 0;
+    this.driverId = null; // id of the player driving it
+  }
+
+  serialize() {
+    return {
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      t: this.type,
+      h: Math.round(this.hp),
+      mh: this.maxHp,
+      a: Number(this.angle.toFixed(2)),
+      d: this.driverId
+    };
+  }
+}
+
 // Constants
 export const COLORS = [
   '#e94560', // Vibrant Red
@@ -46,10 +132,12 @@ export const BOT_NAMES = [
 ];
 
 export const WEAPON_TYPES = [
-  { name: 'Pichoq', dmg: 20, color: '#aaa', emoji: '🔪', isRanged: false, maxAmmo: 0 },
-  { name: 'Pistolet', dmg: 15, color: '#f39c12', emoji: '🔫', isRanged: true, maxAmmo: 6 },
-  { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6 },
-  { name: 'Sniper', dmg: 35, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3 }
+  { name: 'Pichoq', dmg: 20, color: '#aaa', emoji: '🔪', isRanged: false, maxAmmo: 0, spread: 0, recoil: 0 },
+  { name: 'Pistolet', dmg: 15, color: '#f39c12', emoji: '🔫', isRanged: true, maxAmmo: 6, spread: 0.1, recoil: 2 },
+  { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6, spread: 0.05, recoil: 3 },
+  { name: 'Sniper', dmg: 40, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3, spread: 0, recoil: 6 },
+  { name: 'Shotgun', dmg: 12, color: '#e67e22', emoji: '💥', isRanged: true, maxAmmo: 5, spread: 0.3, recoil: 5 },
+  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true, spread: 0.05, recoil: 8 }
 ];
 
 export const GAME_CONFIG = {
@@ -65,6 +153,7 @@ export const GAME_CONFIG = {
   MAX_MEDKIT_SPAWN: 15,
   MAX_WEAPON_SPAWN: 35,
   MAX_SHIELD_SPAWN: 10,
+  MAX_SPEED_SPAWN: 10,
   ITEM_LIFETIME: 10, // seconds
   MEDKIT_HEAL: 25,
   PLAYER_SPEED: 2.8,
@@ -72,7 +161,7 @@ export const GAME_CONFIG = {
 };
 
 export class ServerPlayer {
-  constructor(id, name, color, x, y, isBot = false, avatar = null, customEmojis = null, customSmiley = null) {
+  constructor(id, name, color, x, y, isBot = false, avatar = null, customEmojis = null, customSmiley = null, skin = 'default') {
     this.id = id;
     this.name = name;
     this.color = color;
@@ -80,6 +169,8 @@ export class ServerPlayer {
     this.y = y;
     this.hp = 100;
     this.maxHp = 100;
+    this.kills = 0;
+    this.skin = skin;
     this.dx = 0;
     this.dy = 0;
     this.weapon = null;
@@ -89,11 +180,19 @@ export class ServerPlayer {
     this.pushDx = 0;
     this.pushDy = 0;
     this.radius = 18;
+    this.inBush = false;
     
-    // Shield and Weapon mechanics
+    // Shield, Speed, Weapon and Ability mechanics
+    this.speedTimer = 0;
     this.shieldTimer = 0;
     this.ammo = 0;
     this.meleeTimer = 0;
+    
+    // Ability states
+    this.abilityTimer = 0;
+    this.abilityCooldown = 0;
+    this.buildCooldown = 0;
+    this.invisible = false;
 
     // Bot-specific AI variables
     this.aimTimer = 0;
@@ -102,6 +201,8 @@ export class ServerPlayer {
     this.avatar = avatar;
     this.customEmojis = customEmojis;
     this.customSmiley = customSmiley;
+
+    this.squadId = null;
   }
 
   takeDamage(amount) {
@@ -114,12 +215,31 @@ export class ServerPlayer {
     }
   }
 
-  updatePhysics(dt) {
+  updatePhysics(dt, isDriving = false) {
     if (!this.alive) return;
 
     // Decay shield timer
     if (this.shieldTimer > 0) {
       this.shieldTimer = Math.max(0, this.shieldTimer - dt);
+    }
+    
+    // Decay speed timer
+    if (this.speedTimer > 0) {
+      this.speedTimer = Math.max(0, this.speedTimer - dt);
+    }
+    
+    // Decay ability states
+    if (this.abilityCooldown > 0) {
+      this.abilityCooldown = Math.max(0, this.abilityCooldown - dt);
+    }
+    if (this.buildCooldown > 0) {
+      this.buildCooldown = Math.max(0, this.buildCooldown - dt);
+    }
+    if (this.abilityTimer > 0) {
+      this.abilityTimer = Math.max(0, this.abilityTimer - dt);
+      if (this.abilityTimer === 0 && this.skin === 'ninja') {
+        this.invisible = false;
+      }
     }
 
     // Decay melee weapon timer (melee weapon disappears after 10s)
@@ -146,17 +266,44 @@ export class ServerPlayer {
     }
 
     // Normal movement
-    const speed = this.isBot ? GAME_CONFIG.BOT_SPEED : GAME_CONFIG.PLAYER_SPEED;
-    const nx = this.x + this.dx * speed * dt * 60;
-    const ny = this.y + this.dy * speed * dt * 60;
+    let speed = this.isBot ? GAME_CONFIG.BOT_SPEED : GAME_CONFIG.PLAYER_SPEED;
+    if (this.speedTimer > 0) speed *= 1.5; // 50% speed boost
+    if (isDriving) speed *= 2.5; // Hoverboard speed boost
+
+    let nx = this.x + this.dx * speed * dt * 60;
+    let ny = this.y + this.dy * speed * dt * 60;
     
     // Boundary containment
-    this.x = Math.max(this.radius, Math.min(GAME_CONFIG.WIDTH - this.radius, nx));
-    this.y = Math.max(this.radius, Math.min(GAME_CONFIG.HEIGHT - this.radius, ny));
+    nx = Math.max(this.radius, Math.min(GAME_CONFIG.WIDTH - this.radius, nx));
+    ny = Math.max(this.radius, Math.min(GAME_CONFIG.HEIGHT - this.radius, ny));
+
+    this.x = nx;
+    this.y = ny;
 
     // Rotate weapon
     if (this.weapon) {
       this.weaponAngle = (this.weaponAngle + dt * 2.5) % (Math.PI * 2);
+    }
+  }
+
+  checkBushes(obstacles) {
+    if (!this.alive) return;
+    this.inBush = false;
+    for (const obs of obstacles) {
+      const dist = Math.hypot(this.x - obs.x, this.y - obs.y);
+      if (obs.type === 'bush' && dist < obs.radius) {
+        this.inBush = true;
+      }
+      
+      // Collision check for solid obstacles
+      if (obs.type === 'wood_wall' || obs.type === 'shield_wall') {
+        if (dist < obs.radius + this.radius) {
+          const overlap = (obs.radius + this.radius) - dist;
+          const ang = Math.atan2(this.y - obs.y, this.x - obs.x);
+          this.x += Math.cos(ang) * overlap;
+          this.y += Math.sin(ang) * overlap;
+        }
+      }
     }
   }
 
@@ -198,6 +345,10 @@ export class ServerPlayer {
           this.shieldTimer = 7;
           return false;
         }
+        if (it.type === 'speed_boost') {
+          this.speedTimer = 5;
+          return false;
+        }
       }
       return true;
     });
@@ -229,6 +380,7 @@ export class ServerPlayer {
         alivePlayers.forEach(q => {
           if (q === this) return;
           const d = Math.hypot(q.x - this.x, q.y - this.y);
+          if (q.inBush && d > 80) return; // Ignore enemies hidden in bush unless very close
           if (d < minD) {
             minD = d;
             target = { x: q.x, y: q.y };
@@ -240,8 +392,10 @@ export class ServerPlayer {
       const distCenter = Math.hypot(this.x - zoneCx, this.y - zoneCy);
       if (distCenter > zoneR - 50) {
         const ang = Math.atan2(zoneCy - this.y, zoneCx - this.x);
-        this.dx = Math.cos(ang) * 1.6;
-        this.dy = Math.sin(ang) * 1.6;
+        let runSpeed = 1.6;
+        if (distCenter > zoneR) runSpeed = 2.0; // Sprint if taking zone damage
+        this.dx = Math.cos(ang) * runSpeed;
+        this.dy = Math.sin(ang) * runSpeed;
       } else if (target) {
         const ang = Math.atan2(target.y - this.y, target.x - this.x);
         const spd = 0.8 + Math.random() * 0.8;
@@ -257,6 +411,7 @@ export class ServerPlayer {
       alivePlayers.forEach(q => {
         if (q === this) return;
         const d = Math.hypot(q.x - this.x, q.y - this.y);
+        if (q.inBush && d > 80) return; // Cannot shoot at hidden enemy
         if (d < minEnemyDist) {
           minEnemyDist = d;
           closestEnemy = q;
@@ -272,26 +427,37 @@ export class ServerPlayer {
     }
   }
 
-  serialize() {
-    return {
-      id: this.id,
-      name: this.name,
-      color: this.color,
-      x: this.x,
-      y: this.y,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      weapon: this.weapon,
-      weaponAngle: this.weaponAngle,
-      isBot: this.isBot,
-      alive: this.alive,
-      ammo: this.ammo,
-      meleeTimer: this.meleeTimer,
-      shieldTimer: this.shieldTimer,
-      avatar: this.avatar,
-      customEmojis: this.customEmojis,
-      customSmiley: this.customSmiley
+  serialize(isFull = true) {
+    const data = {
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      h: Math.round(this.hp),
+      wa: Number(this.weaponAngle.toFixed(2)),
+      a: this.alive,
+      w: this.weapon,
+      sq: this.squadId,
+      inv: this.invisible
     };
+
+    if (isFull) {
+      data.n = this.name;
+      data.c = this.color;
+      data.mh = this.maxHp;
+      data.b = this.isBot;
+      data.ib = this.inBush;
+      data.am = this.ammo;
+      data.mt = this.meleeTimer;
+      data.st = this.shieldTimer;
+      data.spt = this.speedTimer;
+      data.k = this.kills;
+      data.sk = this.skin;
+      data.av = this.avatar;
+      data.ce = this.customEmojis;
+      data.cs = this.customSmiley;
+    }
+    
+    return data;
   }
 }
 
@@ -316,13 +482,31 @@ export class ServerItem {
 
   serialize() {
     return {
-      id: this.id,
-      x: this.x,
-      y: this.y,
-      type: this.type,
-      wt: this.wt,
-      angle: this.angle,
-      timer: this.timer
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      t: this.type,
+      w: this.wt,
+      a: Number(this.angle.toFixed(2)),
+      tm: Number(this.timer.toFixed(1))
+    };
+  }
+}
+
+export class ServerAirdrop {
+  constructor(x, y) {
+    this.id = Math.random();
+    this.x = x;
+    this.y = y;
+    this.radius = 25;
+    this.opened = false;
+  }
+  serialize() {
+    return {
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      o: this.opened
     };
   }
 }
@@ -375,28 +559,26 @@ export class ServerBomb {
 
   serialize() {
     return {
-      id: this.id,
-      x: this.x,
-      y: this.y,
-      vx: this.vx,
-      vy: this.vy,
-      bounces: this.bounces,
-      radius: this.radius
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      r: this.radius
     };
   }
 }
 
 export class ServerBullet {
-  constructor(id, x, y, angle, dmg, ownerId) {
+  constructor(id, x, y, angle, dmg, ownerId, isExplosive = false) {
     this.id = id;
     this.x = x;
     this.y = y;
-    this.radius = 4;
+    this.radius = isExplosive ? 8 : 4;
     this.dmg = dmg;
     this.ownerId = ownerId;
+    this.isExplosive = isExplosive;
     this.life = 1.5;
     
-    const speed = 550;
+    const speed = isExplosive ? 350 : 550;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
   }
@@ -415,10 +597,10 @@ export class ServerBullet {
 
   serialize() {
     return {
-      id: this.id,
-      x: this.x,
-      y: this.y,
-      radius: this.radius
+      i: this.id,
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      r: this.radius
     };
   }
 }
@@ -445,7 +627,7 @@ function spawnBombs(numBombs, zoneR, zoneCx, zoneCy) {
   return bombs;
 }
 
-function spawnItems(zoneR, zoneCx, zoneCy, numWeapons = GAME_CONFIG.MAX_WEAPON_SPAWN, numMedkits = GAME_CONFIG.MAX_MEDKIT_SPAWN, numShields = GAME_CONFIG.MAX_SHIELD_SPAWN) {
+function spawnItems(zoneR, zoneCx, zoneCy, numWeapons = GAME_CONFIG.MAX_WEAPON_SPAWN, numMedkits = GAME_CONFIG.MAX_MEDKIT_SPAWN, numShields = GAME_CONFIG.MAX_SHIELD_SPAWN, numSpeed = GAME_CONFIG.MAX_SPEED_SPAWN) {
   const items = [];
   
   for (let i = 0; i < numWeapons; i++) {
@@ -482,6 +664,17 @@ function spawnItems(zoneR, zoneCx, zoneCy, numWeapons = GAME_CONFIG.MAX_WEAPON_S
     items.push(new ServerItem(x, y, 'shield'));
   }
 
+  for (let i = 0; i < numSpeed; i++) {
+    let x, y, tries = 0;
+    do {
+      x = rand(60, GAME_CONFIG.WIDTH - 60);
+      y = rand(60, GAME_CONFIG.HEIGHT - 60);
+      tries++;
+    } while (tries < 50 && Math.hypot(x - zoneCx, y - zoneCy) > zoneR - 30);
+    
+    items.push(new ServerItem(x, y, 'speed_boost'));
+  }
+
   return items;
 }
 
@@ -497,6 +690,10 @@ export class GameStateManager {
     this.items = [];
     this.bullets = [];
     this.bombs = [];
+    this.obstacles = [];
+    this.vehicles = [];
+    this.airdrops = [];
+    this.grid = new SpatialHashGrid(150, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
     
     // Zone config
     this.zoneCx = GAME_CONFIG.WIDTH / 2;
@@ -512,14 +709,16 @@ export class GameStateManager {
 
     this.lobbyTimer = 0; // seconds before resetting to lobby
     this.itemSpawnTimer = 0;
+    this.airdropTimer = 0;
     this.attackTimers = {};
     
     this.lastUpdate = 0;
+    this.tickCount = 0;
   }
 
-  addLobbyPlayer(socketId, name, color, avatar = null, customEmojis = null, customSmiley = null) {
+  addLobbyPlayer(socketId, name, color, avatar = null, customEmojis = null, customSmiley = null, skin = 'default') {
     const isHost = (socketId === this.hostId);
-    this.lobbyPlayers.set(socketId, { id: socketId, name, color, isHost, avatar, customEmojis, customSmiley });
+    this.lobbyPlayers.set(socketId, { id: socketId, name, color, isHost, avatar, customEmojis, customSmiley, skin });
   }
 
   removeLobbyPlayer(socketId) {
@@ -541,6 +740,92 @@ export class GameStateManager {
       this.activePlayers[idx].alive = false;
       this.activePlayers[idx].hp = 0;
     }
+  }
+
+  handlePlayerAction(socketId) {
+    if (this.status !== 'playing') return;
+    const player = this.activePlayers.find(p => p.id === socketId);
+    if (!player || !player.alive) return;
+
+    // Check if driving
+    const drivingVehicle = this.vehicles.find(v => v.driverId === socketId);
+    if (drivingVehicle) {
+      // Dismount
+      drivingVehicle.driverId = null;
+      return;
+    }
+
+    // Mount nearest empty vehicle
+    const emptyVehicle = this.vehicles.find(v => !v.driverId && Math.hypot(v.x - player.x, v.y - player.y) < 60);
+    if (emptyVehicle) {
+      emptyVehicle.driverId = socketId;
+      player.x = emptyVehicle.x;
+      player.y = emptyVehicle.y;
+      return;
+    }
+
+    // Open nearest unopened airdrop
+    const airdrop = this.airdrops.find(a => !a.opened && Math.hypot(a.x - player.x, a.y - player.y) < 60);
+    if (airdrop) {
+      airdrop.opened = true;
+      // Drop Sniper or Rocket
+      const topWeapons = WEAPON_TYPES.filter(w => w.name === 'Sniper' || w.name === 'Rocket');
+      const dropWeapon = topWeapons[randInt(0, topWeapons.length)];
+      this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'weapon', dropWeapon));
+      // Drop Medkit
+      this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'medkit'));
+    }
+  }
+
+  handlePlayerAbility(playerId) {
+    if (this.status !== 'playing') return;
+    const player = this.activePlayers.find(p => p.id === playerId);
+    if (!player || !player.alive || player.abilityCooldown > 0) return;
+
+    player.abilityCooldown = 15; // 15 seconds cooldown for all abilities
+    
+    switch (player.skin) {
+      case 'ninja':
+        // Ninja: Invisibility for 5 seconds
+        player.invisible = true;
+        player.abilityTimer = 5;
+        break;
+      case 'robot':
+        // Robot: Shield Wall
+        // Spawn a temporary destructible obstacle directly in front of the player
+        const wallX = player.x + Math.cos(player.weaponAngle) * 60;
+        const wallY = player.y + Math.sin(player.weaponAngle) * 60;
+        const wall = new ServerObstacle(wallX, wallY, 30, 'shield_wall');
+        wall.timer = 10; // lasts 10 seconds
+        this.obstacles.push(wall);
+        break;
+      case 'zombie':
+        // Zombie: Toxic Cloud (radius 100, lasts 8 seconds)
+        const cloud = new ServerObstacle(player.x, player.y, 100, 'toxic_cloud');
+        cloud.ownerId = player.id;
+        cloud.timer = 8;
+        this.obstacles.push(cloud);
+        break;
+      case 'default':
+      default:
+        // Default: Speed Boost and Radar (represented by emitting an event or just speed)
+        player.speedTimer = 8; // 8 seconds of sprint
+        break;
+    }
+  }
+
+  handlePlayerBuildWall(playerId) {
+    if (this.status !== 'playing') return;
+    const player = this.activePlayers.find(p => p.id === playerId);
+    if (!player || !player.alive || player.buildCooldown > 0) return;
+
+    player.buildCooldown = 5; // 5 seconds cooldown for building walls
+
+    const wallX = player.x + Math.cos(player.weaponAngle) * 50;
+    const wallY = player.y + Math.sin(player.weaponAngle) * 50;
+    const wall = new ServerObstacle(wallX, wallY, 25, 'wood_wall');
+    wall.timer = 15; // Wall stays for 15 seconds
+    this.obstacles.push(wall);
   }
 
   handlePlayerInput(socketId, dx, dy) {
@@ -566,7 +851,13 @@ export class GameStateManager {
 
     const now = Date.now();
     const lastShot = this.attackTimers[`shoot-${socketId}`] || 0;
-    if (now - lastShot < 350) return false; // 350ms cooldown between shots
+    
+    let cooldown = 350;
+    if (player.weapon.name === 'Sniper') cooldown = 800;
+    else if (player.weapon.name === 'Shotgun') cooldown = 600;
+    else if (player.weapon.name === 'Rocket') cooldown = 1200;
+
+    if (now - lastShot < cooldown) return false;
     this.attackTimers[`shoot-${socketId}`] = now;
 
     player.ammo--;
@@ -575,8 +866,24 @@ export class GameStateManager {
     const bx = player.x + Math.cos(angle) * spawnDist;
     const by = player.y + Math.sin(angle) * spawnDist;
 
-    const bulletId = Math.random();
-    this.bullets.push(new ServerBullet(bulletId, bx, by, angle, player.weapon.dmg, socketId));
+    const spread = player.weapon.spread || 0;
+    const recoil = player.weapon.recoil || 0;
+
+    // Apply recoil to player
+    if (recoil > 0) {
+      player.pushDx -= Math.cos(angle) * recoil;
+      player.pushDy -= Math.sin(angle) * recoil;
+    }
+
+    if (player.weapon.name === 'Shotgun') {
+      const shotSpread = spread || 0.25; // ~15 degrees
+      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle - shotSpread, player.weapon.dmg, socketId, false));
+      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle, player.weapon.dmg, socketId, false));
+      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle + shotSpread, player.weapon.dmg, socketId, false));
+    } else {
+      const actualAngle = angle + (Math.random() - 0.5) * spread * 2;
+      this.bullets.push(new ServerBullet(Math.random(), bx, by, actualAngle, player.weapon.dmg, socketId, player.weapon.isExplosive));
+    }
 
     if (player.ammo <= 0) {
       player.weapon = null;
@@ -624,9 +931,27 @@ export class GameStateManager {
     this.itemSpawnTimer = 8;
     this.attackTimers = {};
     
+    // Spawn static obstacles (bushes)
+    this.obstacles = [];
+    for (let i = 0; i < 40; i++) {
+      const x = rand(80, GAME_CONFIG.WIDTH - 80);
+      const y = rand(80, GAME_CONFIG.HEIGHT - 80);
+      this.obstacles.push(new ServerObstacle(x, y, rand(45, 60), 'bush'));
+    }
+    
     this.items = spawnItems(initialZoneR, this.zoneCx, this.zoneCy);
     this.bullets = [];
     this.bombs = spawnBombs(6, initialZoneR, this.zoneCx, this.zoneCy);
+    
+    // Spawn Vehicles
+    this.vehicles = [];
+    for (let i = 0; i < 8; i++) {
+      const x = rand(200, GAME_CONFIG.WIDTH - 200);
+      const y = rand(200, GAME_CONFIG.HEIGHT - 200);
+      const type = Math.random() > 0.5 ? 'car' : 'hoverboard';
+      this.vehicles.push(new ServerVehicle(x, y, type));
+    }
+
     this.activePlayers = [];
     
     let colorIndex = 0;
@@ -642,7 +967,8 @@ export class GameStateManager {
         false,
         lp.avatar,
         lp.customEmojis,
-        lp.customSmiley
+        lp.customSmiley,
+        lp.skin
       ));
       colorIndex++;
     });
@@ -665,6 +991,18 @@ export class GameStateManager {
       }
     }
 
+    // Assign Squads (Max 4 per squad)
+    let currentSquad = 1;
+    let membersInSquad = 0;
+    this.activePlayers.forEach(p => {
+      p.squadId = currentSquad;
+      membersInSquad++;
+      if (membersInSquad >= 4) {
+        currentSquad++;
+        membersInSquad = 0;
+      }
+    });
+
     if (eventCallback) {
       eventCallback('game_started');
     }
@@ -673,6 +1011,7 @@ export class GameStateManager {
   update(dt, eventCallback) {
     if (this.status !== 'playing') return;
 
+    this.tickCount++;
     const now = Date.now();
 
     if (now - this.zoneLastTick >= 1000) {
@@ -691,6 +1030,31 @@ export class GameStateManager {
 
     this.items = this.items.filter(it => it.update(dt));
 
+    // Update obstacles (timers, toxic clouds)
+    this.obstacles = this.obstacles.filter(obs => {
+      if (obs.timer !== undefined) {
+        obs.timer -= dt;
+        if (obs.timer <= 0) return false;
+      }
+      return true;
+    });
+
+    const alivePlayers = this.activePlayers.filter(p => p.alive);
+
+    // Apply toxic cloud damage
+    for (const p of alivePlayers) {
+      for (const obs of this.obstacles) {
+        if (obs.type === 'toxic_cloud') {
+          const dist = Math.hypot(p.x - obs.x, p.y - obs.y);
+          if (dist <= obs.radius) {
+            if (p.id !== obs.ownerId || p.skin !== 'zombie') {
+              p.takeDamage(10 * dt); // 10 damage per second
+            }
+          }
+        }
+      }
+    }
+
     this.itemSpawnTimer -= dt;
     if (this.itemSpawnTimer <= 0) {
       this.itemSpawnTimer = 6 + Math.random() * 4;
@@ -698,10 +1062,15 @@ export class GameStateManager {
       this.items.push(...newBatch);
     }
 
-    const alivePlayers = this.activePlayers.filter(p => p.alive);
+    // Update Spatial Hash Grid
+    this.grid.clear();
+    alivePlayers.forEach(p => this.grid.insert(p));
 
-    alivePlayers.forEach(p => {
-      if (p.isBot) {
+    // Player updates
+    for (const p of this.activePlayers) {
+      const isDriving = this.vehicles.some(v => v.driverId === p.id);
+      
+      if (p.isBot && p.alive) {
         p.updateAI(alivePlayers, this.items, this.zoneCx, this.zoneCy, this.zoneR, dt, (botId, angle) => {
           this.handlePlayerShoot(botId, angle);
           if (eventCallback) {
@@ -709,10 +1078,28 @@ export class GameStateManager {
           }
         });
       }
-      p.updatePhysics(dt);
+      p.updatePhysics(dt, isDriving);
+      p.checkBushes(this.obstacles);
       p.updateZoneDamage(this.zoneCx, this.zoneCy, this.zoneR, dt);
       this.items = p.checkItemPickups(this.items);
-    });
+    }
+
+    // Sync vehicles with driving players
+    for (const v of this.vehicles) {
+      if (v.driverId) {
+        const driver = this.activePlayers.find(p => p.id === v.driverId);
+        if (driver && driver.alive) {
+          v.x = driver.x;
+          v.y = driver.y;
+          // Calculate angle from driver's velocity
+          if (driver.dx !== 0 || driver.dy !== 0) {
+            v.angle = Math.atan2(driver.dy, driver.dx);
+          }
+        } else {
+          v.driverId = null; // Driver died or disconnected
+        }
+      }
+    }
 
     // Bouncing bombs movement and boundary reflections
     this.bombs = this.bombs.filter(bomb => bomb.update(dt));
@@ -768,25 +1155,89 @@ export class GameStateManager {
       if (newBomb) this.bombs.push(newBomb);
     }
 
-    // Bullet updates and collision checks
+    // Bullet updates and collision checks with Spatial Hashing
     this.bullets = this.bullets.filter(bullet => {
       const active = bullet.update(dt);
       if (!active) return false;
 
-      for (const p of alivePlayers) {
+      let hit = false;
+      // Use spatial hash to get potential players
+      const potentials = this.grid.query(bullet.x, bullet.y, bullet.radius + 25);
+      
+      for (const p of potentials) {
         if (p.id === bullet.ownerId) continue;
+        const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
+        if (attacker && attacker.squadId === p.squadId) continue; // Ignore teammates
+        
         const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
         if (dist < p.radius + bullet.radius) {
-          p.takeDamage(bullet.dmg);
-          if (eventCallback) {
-            const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
-            eventCallback('combat_hit', {
-              a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
-              b: { id: p.id, name: p.name }
-            });
-          }
-          return false; // destroy bullet
+          hit = true;
+          break;
         }
+      }
+      
+      if (hit) {
+        if (bullet.isExplosive) {
+           const splashPotentials = this.grid.query(bullet.x, bullet.y, 80 + 25);
+           for (const p of splashPotentials) {
+             const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
+             if (attacker && attacker.squadId === p.squadId) continue; // Friendly fire off
+
+             const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
+             if (dist < 80) { // explosion radius
+                const wasAlive = p.alive;
+                p.takeDamage(bullet.dmg);
+                if (wasAlive && !p.alive && attacker) attacker.kills++;
+                
+                const ang = Math.atan2(p.y - bullet.y, p.x - bullet.x);
+                p.pushDx += Math.cos(ang) * 4;
+                p.pushDy += Math.sin(ang) * 4;
+
+                if (eventCallback) {
+                  eventCallback('combat_hit', {
+                    a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
+                    b: { id: p.id, name: p.name }
+                  });
+                  if (wasAlive && !p.alive) {
+                    eventCallback('kill_event', {
+                      killer: attacker ? attacker.name : 'Unknown',
+                      victim: p.name,
+                      weapon: attacker && attacker.weapon ? attacker.weapon.name : 'Rocket'
+                    });
+                  }
+                }
+             }
+           }
+        } else {
+           for (const p of potentials) {
+             if (p.id === bullet.ownerId) continue;
+             const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
+             if (attacker && attacker.squadId === p.squadId) continue;
+
+             const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
+             if (dist < p.radius + bullet.radius) {
+                const wasAlive = p.alive;
+                p.takeDamage(bullet.dmg);
+                if (wasAlive && !p.alive && attacker) attacker.kills++;
+
+                if (eventCallback) {
+                  eventCallback('combat_hit', {
+                    a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
+                    b: { id: p.id, name: p.name }
+                  });
+                  if (wasAlive && !p.alive) {
+                    eventCallback('kill_event', {
+                      killer: attacker ? attacker.name : 'Unknown',
+                      victim: p.name,
+                      weapon: attacker && attacker.weapon ? attacker.weapon.name : 'Qurol'
+                    });
+                  }
+                }
+                break;
+             }
+           }
+        }
+        return false;
       }
       return true;
     });
@@ -813,16 +1264,25 @@ export class GameStateManager {
           const wx = a.x + Math.cos(a.weaponAngle) * (a.radius + 8);
           const wy = a.y + Math.sin(a.weaponAngle) * (a.radius + 8);
           const distToB = Math.hypot(wx - b.x, wy - b.y);
-          if (distToB < b.radius + 6) {
+          if (distToB < b.radius + 6 && a.squadId !== b.squadId) {
             const combatKey = `${a.id}-hits-${b.id}`;
             if (!this.attackTimers[combatKey] || now - this.attackTimers[combatKey] > GAME_CONFIG.ATTACK_COOLDOWN) {
               this.attackTimers[combatKey] = now;
+              const wasAlive = b.alive;
               b.takeDamage(a.weapon.dmg);
+              if (wasAlive && !b.alive) a.kills++;
               if (eventCallback) {
                 eventCallback('combat_hit', {
                   a: { id: a.id, name: a.name },
                   b: { id: b.id, name: b.name }
                 });
+                if (wasAlive && !b.alive) {
+                  eventCallback('kill_event', {
+                    killer: a.name,
+                    victim: b.name,
+                    weapon: a.weapon ? a.weapon.name : 'Pichoq'
+                  });
+                }
               }
             }
           }
@@ -833,20 +1293,49 @@ export class GameStateManager {
           const wx = b.x + Math.cos(b.weaponAngle) * (b.radius + 8);
           const wy = b.y + Math.sin(b.weaponAngle) * (b.radius + 8);
           const distToA = Math.hypot(wx - a.x, wy - a.y);
-          if (distToA < a.radius + 6) {
+          if (distToA < a.radius + 6 && b.squadId !== a.squadId) {
             const combatKey = `${b.id}-hits-${a.id}`;
             if (!this.attackTimers[combatKey] || now - this.attackTimers[combatKey] > GAME_CONFIG.ATTACK_COOLDOWN) {
               this.attackTimers[combatKey] = now;
+              const wasAlive = a.alive;
               a.takeDamage(b.weapon.dmg);
+              if (wasAlive && !a.alive) b.kills++;
               if (eventCallback) {
                 eventCallback('combat_hit', {
                   a: { id: b.id, name: b.name },
                   b: { id: a.id, name: a.name }
                 });
+                if (wasAlive && !a.alive) {
+                  eventCallback('kill_event', {
+                    killer: b.name,
+                    victim: a.name,
+                    weapon: b.weapon ? b.weapon.name : 'Pichoq'
+                  });
+                }
               }
             }
           }
         }
+      }
+    }
+
+    // Airdrop Spawning
+    this.airdropTimer += dt;
+    if (this.airdropTimer > 45) { // Every 45 seconds
+      this.airdropTimer = 0;
+      let x, y, tries = 0;
+      do {
+        x = rand(60, GAME_CONFIG.WIDTH - 60);
+        y = rand(60, GAME_CONFIG.HEIGHT - 60);
+        tries++;
+      } while (tries < 50 && Math.hypot(x - this.zoneCx, y - this.zoneCy) > this.zoneR - 50);
+      this.airdrops.push(new ServerAirdrop(x, y));
+      if (eventCallback) {
+         eventCallback('kill_event', {
+           killer: 'SYSTEM',
+           victim: 'Airdrop tushdi!',
+           weapon: '🪂'
+         });
       }
     }
 
@@ -902,6 +1391,59 @@ export class GameStateManager {
       items: this.items.map(it => it.serialize()),
       bullets: (this.bullets || []).map(b => b.serialize()),
       bombs: (this.bombs || []).map(b => b.serialize()),
+      obstacles: (this.obstacles || []).map(o => o.serialize()),
+      vehicles: (this.vehicles || []).map(v => v.serialize()),
+      airdrops: (this.airdrops || []).map(a => a.serialize()),
+      zone: {
+        cx: this.zoneCx,
+        cy: this.zoneCy,
+        r: this.zoneR,
+        targetR: this.zoneTargetR,
+        timer: this.zoneTimer
+      },
+      lobbyPlayers: Array.from(this.lobbyPlayers.values()),
+      countdownSeconds: this.countdownSeconds,
+      lobbyResetSeconds: this.lobbyTimer
+    };
+  }
+  getStatePayloadFor(playerId) {
+    const player = this.activePlayers.find(p => p.id === playerId);
+    
+    let filteredPlayers = this.activePlayers;
+    let filteredItems = this.items;
+    let filteredBullets = this.bullets || [];
+    let filteredBombs = this.bombs || [];
+    let filteredObstacles = this.obstacles || [];
+    let filteredVehicles = this.vehicles || [];
+    let filteredAirdrops = this.airdrops || [];
+
+    // Interest Management: Only send entities within 1500px if player is alive
+    if (player && player.alive) {
+      const MAX_DIST = 1500;
+      filteredPlayers = this.activePlayers.filter(p => p.id === playerId || Math.hypot(p.x - player.x, p.y - player.y) <= MAX_DIST);
+      filteredItems = this.items.filter(it => Math.hypot(it.x - player.x, it.y - player.y) <= MAX_DIST);
+      filteredBullets = filteredBullets.filter(b => Math.hypot(b.x - player.x, b.y - player.y) <= MAX_DIST);
+      filteredBombs = filteredBombs.filter(b => Math.hypot(b.x - player.x, b.y - player.y) <= MAX_DIST);
+      filteredObstacles = filteredObstacles.filter(o => Math.hypot(o.x - player.x, o.y - player.y) <= MAX_DIST);
+      filteredVehicles = filteredVehicles.filter(v => Math.hypot(v.x - player.x, v.y - player.y) <= MAX_DIST);
+      filteredAirdrops = filteredAirdrops.filter(a => Math.hypot(a.x - player.x, a.y - player.y) <= MAX_DIST);
+    }
+
+    const isFull = (this.tickCount % 10 === 0);
+
+    return {
+      roomCode: this.roomCode,
+      hostId: this.hostId,
+      useBots: this.useBots,
+      botCount: this.botCount,
+      status: this.status,
+      players: filteredPlayers.map(p => p.serialize(isFull)),
+      items: filteredItems.map(it => it.serialize()),
+      bullets: filteredBullets.map(b => b.serialize()),
+      bombs: filteredBombs.map(b => b.serialize()),
+      obstacles: filteredObstacles.map(o => o.serialize()),
+      vehicles: filteredVehicles.map(v => v.serialize()),
+      airdrops: filteredAirdrops.map(a => a.serialize()),
       zone: {
         cx: this.zoneCx,
         cy: this.zoneCy,

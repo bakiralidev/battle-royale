@@ -52,6 +52,17 @@ export class Item {
       // Timer bar under the shield
       ctx.fillStyle = 'rgba(0, 191, 255, 0.6)';
       ctx.fillRect(this.x - 10, this.y + 12, 20 * frac, 3);
+    } else if (this.type === 'speed_boost') {
+      // Speed boost item
+      ctx.font = '16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚡', this.x, this.y);
+      ctx.restore();
+      
+      // Timer bar under the speed boost
+      ctx.fillStyle = 'rgba(241, 196, 15, 0.6)';
+      ctx.fillRect(this.x - 10, this.y + 12, 20 * frac, 3);
     } else {
       ctx.restore();
     }

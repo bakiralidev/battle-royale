@@ -48,7 +48,9 @@ export const WEAPON_TYPES = [
   { name: 'Pichoq', dmg: 20, color: '#aaa', emoji: '🔪', isRanged: false, maxAmmo: 0 },
   { name: 'Pistolet', dmg: 15, color: '#f39c12', emoji: '🔫', isRanged: true, maxAmmo: 6 },
   { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6 },
-  { name: 'Sniper', dmg: 35, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3 }
+  { name: 'Sniper', dmg: 40, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3 },
+  { name: 'Shotgun', dmg: 12, color: '#e67e22', emoji: '💥', isRanged: true, maxAmmo: 5 },
+  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true }
 ];
 
 export const GAME_CONFIG = {

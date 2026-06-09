@@ -12,6 +12,10 @@ import { initBouncingWidgets } from './bouncing.js';
 // Particle class for juice effects
 class GameParticle {
   constructor(x, y, color) {
+    this.reset(x, y, color);
+  }
+
+  reset(x, y, color) {
     this.x = x;
     this.y = y;
     this.vx = (Math.random() - 0.5) * 120;
@@ -43,6 +47,10 @@ class GameParticle {
 // Floating Text class for damage feedback
 class FloatingText {
   constructor(x, y, text, color) {
+    this.reset(x, y, text, color);
+  }
+
+  reset(x, y, text, color) {
     this.x = x;
     this.y = y;
     this.vy = -45; // move upwards
@@ -68,10 +76,145 @@ class FloatingText {
   }
 }
 
+// Object Pools
+const ParticlePool = {
+  pool: [],
+  get(x, y, color) {
+    if (this.pool.length > 0) {
+      const p = this.pool.pop();
+      p.reset(x, y, color);
+      return p;
+    }
+    return new GameParticle(x, y, color);
+  },
+  release(p) {
+    this.pool.push(p);
+  }
+};
+
+const FloatingTextPool = {
+  pool: [],
+  get(x, y, text, color) {
+    if (this.pool.length > 0) {
+      const t = this.pool.pop();
+      t.reset(x, y, text, color);
+      return t;
+    }
+    return new FloatingText(x, y, text, color);
+  },
+  release(t) {
+    this.pool.push(t);
+  }
+};
+
 // ── Globals ────────────────────────────────────────────────
 const ui = new UIManager();
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
+
+const minimapCanvas = document.getElementById('minimapCanvas');
+const minimapCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
+
+// Achievement Worker Initialization
+const achievementWorker = new Worker('js/worker.js');
+let totalKillsInGame = 0;
+
+achievementWorker.onmessage = (e) => {
+  if (e.data.type === 'ACHIEVEMENT_UNLOCKED') {
+    showAchievement(e.data.achievement);
+  }
+};
+
+function showAchievement(text) {
+  const toast = document.getElementById('achievementToast');
+  if (!toast) return;
+  document.getElementById('achievementText').textContent = text;
+  toast.style.display = 'flex';
+  sounds.play('win'); // simple sound for achievement
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 4000);
+}
+
+// Background Cache
+let bgCanvasCache = null;
+function getCachedBackground() {
+  if (!bgCanvasCache) {
+    bgCanvasCache = document.createElement('canvas');
+    bgCanvasCache.width = GAME_CONFIG.WIDTH;
+    bgCanvasCache.height = GAME_CONFIG.HEIGHT;
+    const bgCtx = bgCanvasCache.getContext('2d');
+    
+    const w = GAME_CONFIG.WIDTH;
+    const h = GAME_CONFIG.HEIGHT;
+    
+    // Forest / Grass Biome
+    bgCtx.fillStyle = '#162b18';
+    bgCtx.fillRect(0, 0, w / 2, h / 2);
+    
+    // Desert / Sand Biome
+    bgCtx.fillStyle = '#2c2214';
+    bgCtx.fillRect(w / 2, 0, w / 2, h / 2);
+    
+    // Snow / Ice Biome
+    bgCtx.fillStyle = '#1c2128';
+    bgCtx.fillRect(0, h / 2, w / 2, h / 2);
+    
+    // Urban / Dark Biome
+    bgCtx.fillStyle = '#111124';
+    bgCtx.fillRect(w / 2, h / 2, w / 2, h / 2);
+
+    bgCtx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+    bgCtx.lineWidth = 1;
+    for (let x = 0; x <= GAME_CONFIG.WIDTH; x += 40) {
+      bgCtx.beginPath(); bgCtx.moveTo(x, 0); bgCtx.lineTo(x, GAME_CONFIG.HEIGHT); bgCtx.stroke();
+    }
+    for (let y = 0; y <= GAME_CONFIG.HEIGHT; y += 40) {
+      bgCtx.beginPath(); bgCtx.moveTo(0, y); bgCtx.lineTo(GAME_CONFIG.WIDTH, y); bgCtx.stroke();
+    }
+
+    bgCtx.strokeStyle = '#e94560';
+    bgCtx.lineWidth = 4;
+    bgCtx.shadowBlur = 10;
+    bgCtx.shadowColor = '#e94560';
+    bgCtx.strokeRect(0, 0, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
+  }
+  return bgCanvasCache;
+}
+
+let obstacleCanvasCache = null;
+let lastObstacleCount = 0;
+function getCachedObstacles() {
+  if (!obstacleCanvasCache || state.obstacles.length !== lastObstacleCount) {
+    lastObstacleCount = state.obstacles.length;
+    obstacleCanvasCache = document.createElement('canvas');
+    obstacleCanvasCache.width = GAME_CONFIG.WIDTH;
+    obstacleCanvasCache.height = GAME_CONFIG.HEIGHT;
+    const obsCtx = obstacleCanvasCache.getContext('2d');
+    
+    state.obstacles.forEach(obs => {
+      if (obs.type === 'bush') {
+        obsCtx.beginPath();
+        obsCtx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+        obsCtx.fillStyle = '#2d4c1e'; // Dark green outer
+        obsCtx.fill();
+        obsCtx.beginPath();
+        obsCtx.arc(obs.x, obs.y, obs.radius * 0.8, 0, Math.PI * 2);
+        obsCtx.fillStyle = '#3a6b24'; // Lighter green inner
+        obsCtx.fill();
+        
+        // Some texture dots
+        obsCtx.fillStyle = '#1a3310';
+        for(let i=0; i<3; i++) {
+           obsCtx.beginPath();
+           obsCtx.arc(obs.x + (i*10-10), obs.y + (i*5-5), 5, 0, Math.PI*2);
+           obsCtx.fill();
+        }
+      }
+    });
+  }
+  return obstacleCanvasCache;
+}
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -90,6 +233,8 @@ window.addEventListener('mousemove', e => {
 const state = {
   running: false,
   status: 'lobby',
+  obstacles: [],
+  vehicles: [],
   player: null,
   players: [],
   items: [],
@@ -154,15 +299,18 @@ function bindSocketEvents() {
     else if (weaponType === 'Sniper') soundType = 'shoot_sniper';
 
     let volume = 1.0;
+    let pan = 0;
     if (state.player && playerId !== socket.id) {
       const other = state.players.find(p => p.id === playerId);
       if (other) {
         const d = Math.hypot(other.x - state.player.x, other.y - state.player.y);
         volume = Math.max(0, 1 - d / 1200);
+        pan = (other.x - state.player.x) / (d || 1);
+        pan = Math.max(-1, Math.min(1, pan));
       }
     }
     if (volume > 0.05) {
-      sounds.play(soundType, volume);
+      sounds.play(soundType, volume, pan);
     }
   });
 
@@ -195,6 +343,9 @@ function bindSocketEvents() {
   });
 
   socket.on('game_started', () => {
+    totalKillsInGame = 0;
+    achievementWorker.postMessage({ type: 'GAME_START' });
+
     ui.showGame();
     ui.overlay.style.display = 'none';
     canvas.focus();
@@ -209,10 +360,99 @@ function bindSocketEvents() {
   socket.on('state_update', (serverState) => {
     const prevPlayer = state.player;
     state.status  = serverState.status;
-    state.players = serverState.players.map(p => new Player(p));
-    state.items   = serverState.items.map(it => new Item(it));
-    state.bullets = serverState.bullets || [];
-    state.bombs   = serverState.bombs || [];
+
+    // Map players from minified keys
+    const mappedPlayers = serverState.players.map(p => {
+      const obj = {
+        id: p.i, x: p.x, y: p.y, hp: p.h, weaponAngle: p.wa, alive: p.a, weapon: p.w, squadId: p.sq
+      };
+      if (p.n !== undefined) obj.name = p.n;
+      if (p.c !== undefined) obj.color = p.c;
+      if (p.mh !== undefined) obj.maxHp = p.mh;
+      if (p.b !== undefined) obj.isBot = p.b;
+      if (p.ib !== undefined) obj.inBush = p.ib;
+      if (p.am !== undefined) obj.ammo = p.am;
+      if (p.mt !== undefined) obj.meleeTimer = p.mt;
+      if (p.st !== undefined) obj.shieldTimer = p.st;
+      if (p.spt !== undefined) obj.speedTimer = p.spt;
+      if (p.k !== undefined) obj.kills = p.k;
+      if (p.sk !== undefined) obj.skin = p.sk;
+      if (p.av !== undefined) obj.avatar = p.av;
+      if (p.ce !== undefined) obj.customEmojis = p.ce;
+      if (p.cs !== undefined) obj.customSmiley = p.cs;
+      return obj;
+    });
+
+    // Interpolate players
+    mappedPlayers.forEach(mp => {
+      let existing = state.players.find(p => p.id === mp.id);
+      if (existing) {
+        existing.targetX = mp.x;
+        existing.targetY = mp.y;
+        existing.hp = mp.hp;
+        existing.weaponAngle = mp.weaponAngle;
+        existing.alive = mp.alive;
+        existing.weapon = mp.weapon;
+        if (mp.squadId !== undefined) existing.squadId = mp.squadId;
+        
+        // Full update fields
+        if (mp.name !== undefined) existing.name = mp.name;
+        if (mp.color !== undefined) existing.color = mp.color;
+        if (mp.maxHp !== undefined) existing.maxHp = mp.maxHp;
+        if (mp.isBot !== undefined) existing.isBot = mp.isBot;
+        if (mp.inBush !== undefined) existing.inBush = mp.inBush;
+        if (mp.ammo !== undefined) existing.ammo = mp.ammo;
+        if (mp.meleeTimer !== undefined) existing.meleeTimer = mp.meleeTimer;
+        if (mp.shieldTimer !== undefined) existing.shieldTimer = mp.shieldTimer;
+        if (mp.speedTimer !== undefined) existing.speedTimer = mp.speedTimer;
+        if (mp.kills !== undefined) existing.kills = mp.kills;
+        if (mp.skin !== undefined) existing.skin = mp.skin;
+        if (mp.avatar !== undefined) existing.avatar = mp.avatar;
+      } else {
+        let np = new Player(mp);
+        np.targetX = mp.x;
+        np.targetY = mp.y;
+        if (mp.squadId !== undefined) np.squadId = mp.squadId;
+        state.players.push(np);
+      }
+    });
+    // Remove players that are no longer in serverState
+    state.players = state.players.filter(p => mappedPlayers.some(mp => mp.id === p.id));
+
+    // Map items from minified keys
+    state.items = serverState.items.map(it => new Item({
+      id: it.i, x: it.x, y: it.y, type: it.t, wt: it.w, angle: it.a, timer: it.tm
+    }));
+
+    // Map bullets and bombs from minified keys
+    state.bullets = (serverState.bullets || []).map(b => ({
+      id: b.i, x: b.x, y: b.y, radius: b.r
+    }));
+    state.bombs = (serverState.bombs || []).map(b => ({
+      id: b.i, x: b.x, y: b.y, radius: b.r
+    }));
+
+    // Map obstacles (bushes)
+    if (serverState.obstacles) {
+      state.obstacles = serverState.obstacles.map(o => ({
+        id: o.i, x: o.x, y: o.y, radius: o.r, type: o.t
+      }));
+    }
+
+    // Map vehicles
+    if (serverState.vehicles) {
+      state.vehicles = serverState.vehicles.map(v => ({
+        id: v.i, x: v.x, y: v.y, type: v.t, hp: v.h, maxHp: v.mh, angle: v.a, driverId: v.d
+      }));
+    }
+
+    // Map airdrops
+    if (serverState.airdrops) {
+      state.airdrops = serverState.airdrops.map(a => ({
+        id: a.i, x: a.x, y: a.y, opened: a.o
+      }));
+    }
+
     state.zoneR   = serverState.zone.r;
     state.zoneCx  = serverState.zone.cx;
     state.zoneCy  = serverState.zone.cy;
@@ -295,6 +535,50 @@ function bindSocketEvents() {
       }
     }
   });
+
+  socket.on('kill_event', (data) => {
+    totalKillsInGame++;
+    const isMe = state.player && (data.killer === state.player.name);
+    
+    achievementWorker.postMessage({
+      type: 'KILL_EVENT',
+      payload: {
+        isMe: isMe,
+        isFirstBloodInGame: (totalKillsInGame === 1),
+        time: Date.now()
+      }
+    });
+
+    const killFeed = document.getElementById('killFeed');
+    if (!killFeed) return;
+    const item = document.createElement('div');
+    item.className = 'kill-feed-item';
+    item.innerHTML = `<span class="kf-killer">${data.killer}</span> <span class="kf-weapon">🔫</span> <span class="kf-victim">${data.victim}</span>`;
+    killFeed.appendChild(item);
+    setTimeout(() => {
+      if (killFeed.contains(item)) killFeed.removeChild(item);
+    }, 5000);
+  });
+
+  socket.on('player_emote', (data) => {
+    const p = state.players.find(player => player.id === data.id);
+    if (p) {
+      createFloatingText(p.x, p.y - p.radius - 20, data.emote, '#ffffff');
+    }
+  });
+
+  socket.on('pong', (clientTime) => {
+    const latency = Date.now() - clientTime;
+    const pingEl = document.getElementById('pingValue');
+    if (pingEl) pingEl.textContent = latency;
+  });
+
+  // Periodically send ping
+  setInterval(() => {
+    if (state.running) {
+      socket.emit('ping', Date.now());
+    }
+  }, 2000);
 
   socket.on('stats_updated', ({ user, result }) => {
     state.currentUser = user;
@@ -525,8 +809,9 @@ function goToLobby() {
 
   // Setup color picker
   const savedColor = state.currentUser?.color || COLORS[0];
-  const savedIdx = COLORS.indexOf(savedColor);
+  const savedIdx = COLORS.indexOf(state.currentUser?.color);
   ui.initColorPicker(COLORS, COLOR_NAMES, savedIdx >= 0 ? savedIdx : 0);
+  ui.initSkinPicker();
 
   // Lobby nav user area
   if (state.currentUser) {
@@ -975,6 +1260,44 @@ window.addEventListener('keydown', e => {
       socket?.emit('shoot', { angle });
     }
   }
+
+  if (e.key === 'f' || e.key === 'F') {
+    if (state.status === 'playing' && state.player && state.player.alive) {
+      socket?.emit('action');
+    }
+  }
+
+  if (e.key === 'e' || e.key === 'E') {
+    if (state.status === 'playing' && state.player && state.player.alive) {
+      socket?.emit('use_ability');
+    }
+  }
+
+  if (e.key === 'q' || e.key === 'Q') {
+    if (state.status === 'playing' && state.player && state.player.alive) {
+      socket?.emit('use_item', { type: 'medkit' });
+    }
+  }
+
+  if (e.key === 'c' || e.key === 'C') {
+    if (state.status === 'playing' && state.player && state.player.alive) {
+      socket?.emit('build_wall');
+    }
+  }
+
+  // Emote shortcuts
+  if (state.status === 'playing' && state.player && state.player.alive) {
+    const emotes = {
+      '1': '😂',
+      '2': '😡',
+      '3': '💀',
+      '4': '🎯',
+      '5': '✌️'
+    };
+    if (emotes[e.key]) {
+      socket?.emit('emote', emotes[e.key]);
+    }
+  }
 });
 
 window.addEventListener('keyup', e => {
@@ -985,7 +1308,8 @@ window.addEventListener('keyup', e => {
 let lastDx = 0, lastDy = 0;
 function checkSendInput() {
   if (state.status !== 'playing' || !state.player || !state.player.alive || !socket) return;
-  let dx = 0, dy = 0;
+  let dx = typeof touchDx !== 'undefined' ? touchDx : 0;
+  let dy = typeof touchDy !== 'undefined' ? touchDy : 0;
   if (keys['ArrowUp']    || keys['w'] || keys['W']) dy = -1;
   if (keys['ArrowDown']  || keys['s'] || keys['S']) dy =  1;
   if (keys['ArrowLeft']  || keys['a'] || keys['A']) dx = -1;
@@ -994,6 +1318,202 @@ function checkSendInput() {
     lastDx = dx; lastDy = dy;
     socket?.emit('player_input', { dx, dy });
   }
+}
+
+// ── Mobile Touch Controls ──────────────────────────────────
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const joystickZone = document.getElementById('joystickZone');
+const joystickKnob = document.getElementById('joystickKnob');
+
+const shootJoystickZone = document.getElementById('shootJoystickZone');
+const shootJoystickKnob = document.getElementById('shootJoystickKnob');
+const mobileActions = document.getElementById('mobileActions');
+const mobileBtnQ = document.getElementById('mobileBtnQ');
+const mobileBtnF = document.getElementById('mobileBtnF');
+const mobileBtnE = document.getElementById('mobileBtnE');
+const mobileBtnC = document.getElementById('mobileBtnC');
+
+let touchDx = 0;
+let touchDy = 0;
+let activeJoystickTouch = null;
+let activeShootTouch = null;
+let shootInterval = null;
+
+if (isTouchDevice && joystickZone && joystickKnob) {
+  joystickZone.style.display = 'block';
+  if(shootJoystickZone) shootJoystickZone.style.display = 'block';
+  if(mobileActions) mobileActions.style.display = 'flex';
+
+  // Movement Joystick
+  joystickZone.addEventListener('touchstart', handleJoystickTouch, { passive: false });
+  joystickZone.addEventListener('touchmove', handleJoystickTouch, { passive: false });
+  joystickZone.addEventListener('touchend', handleJoystickEnd, { passive: false });
+  joystickZone.addEventListener('touchcancel', handleJoystickEnd, { passive: false });
+
+  // Shoot Joystick
+  if(shootJoystickZone) {
+    shootJoystickZone.addEventListener('touchstart', handleShootTouch, { passive: false });
+    shootJoystickZone.addEventListener('touchmove', handleShootTouch, { passive: false });
+    shootJoystickZone.addEventListener('touchend', handleShootEnd, { passive: false });
+    shootJoystickZone.addEventListener('touchcancel', handleShootEnd, { passive: false });
+  }
+
+  if (mobileBtnQ) mobileBtnQ.addEventListener('touchstart', (e) => { e.preventDefault(); socket?.emit('use_item', { type: 'medkit' }); });
+  if (mobileBtnF) mobileBtnF.addEventListener('touchstart', (e) => { e.preventDefault(); socket?.emit('action'); });
+  if (mobileBtnE) mobileBtnE.addEventListener('touchstart', (e) => { e.preventDefault(); socket?.emit('use_ability'); });
+  if (mobileBtnC) mobileBtnC.addEventListener('touchstart', (e) => { e.preventDefault(); socket?.emit('build_wall'); });
+
+  function handleJoystickTouch(e) {
+    e.preventDefault();
+    if (state.status !== 'playing' || !state.player || !state.player.alive) return;
+    
+    let touch = null;
+    if (activeJoystickTouch !== null) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activeJoystickTouch) {
+          touch = e.changedTouches[i];
+          break;
+        }
+      }
+      if (!touch && e.type === 'touchstart') touch = e.changedTouches[0];
+    } else {
+      touch = e.changedTouches[0];
+      activeJoystickTouch = touch.identifier;
+    }
+
+    if (!touch) return;
+
+    const rect = joystickZone.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    let dx = touch.clientX - centerX;
+    let dy = touch.clientY - centerY;
+    
+    const maxDist = rect.width / 2;
+    const dist = Math.hypot(dx, dy);
+    
+    if (dist > maxDist) {
+      dx = (dx / dist) * maxDist;
+      dy = (dy / dist) * maxDist;
+    }
+    
+    joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    
+    const normDx = dist > 0 ? (dx / maxDist) : 0;
+    const normDy = dist > 0 ? (dy / maxDist) : 0;
+
+    touchDx = 0;
+    touchDy = 0;
+    if (normDx > 0.3) touchDx = 1;
+    if (normDx < -0.3) touchDx = -1;
+    if (normDy > 0.3) touchDy = 1;
+    if (normDy < -0.3) touchDy = -1;
+
+    checkSendInput();
+  }
+
+  function handleJoystickEnd(e) {
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === activeJoystickTouch) {
+        activeJoystickTouch = null;
+        touchDx = 0;
+        touchDy = 0;
+        joystickKnob.style.transform = `translate(0px, 0px)`;
+        checkSendInput();
+        break;
+      }
+    }
+  }
+
+  function handleShootTouch(e) {
+    e.preventDefault();
+    if (state.status !== 'playing' || !state.player || !state.player.alive) return;
+    
+    let touch = null;
+    if (activeShootTouch !== null) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activeShootTouch) {
+          touch = e.changedTouches[i];
+          break;
+        }
+      }
+      if (!touch && e.type === 'touchstart') touch = e.changedTouches[0];
+    } else {
+      touch = e.changedTouches[0];
+      activeShootTouch = touch.identifier;
+    }
+
+    if (!touch) return;
+
+    const rect = shootJoystickZone.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    let dx = touch.clientX - centerX;
+    let dy = touch.clientY - centerY;
+    
+    const maxDist = rect.width / 2;
+    const dist = Math.hypot(dx, dy);
+    
+    if (dist > maxDist) {
+      dx = (dx / dist) * maxDist;
+      dy = (dy / dist) * maxDist;
+    }
+    
+    shootJoystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    
+    if (dist > 10) {
+      const angle = Math.atan2(dy, dx);
+      if (!shootInterval) {
+        socket?.emit('shoot', { angle });
+        shootInterval = setInterval(() => {
+          socket?.emit('shoot', { angle });
+        }, 150);
+      } else {
+        clearInterval(shootInterval);
+        shootInterval = setInterval(() => {
+          socket?.emit('shoot', { angle });
+        }, 150);
+      }
+    }
+  }
+
+  function handleShootEnd(e) {
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === activeShootTouch) {
+        activeShootTouch = null;
+        shootJoystickKnob.style.transform = `translate(0px, 0px)`;
+        if (shootInterval) {
+          clearInterval(shootInterval);
+          shootInterval = null;
+        }
+        break;
+      }
+    }
+  }
+
+  canvas.addEventListener('touchstart', e => {
+    if (e.target === joystickZone || joystickZone.contains(e.target)) return;
+    if (state.status !== 'playing' || !state.player || !state.player.alive) return;
+    
+    const touch = e.changedTouches[0];
+    const rect = canvas.getBoundingClientRect();
+    
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    const clickX = (touch.clientX - rect.left) * scaleX;
+    const clickY = (touch.clientY - rect.top) * scaleY;
+    
+    const dx = clickX - canvas.width / 2;
+    const dy = clickY - canvas.height / 2;
+    const angle = Math.atan2(dy, dx);
+    
+    socket?.emit('shoot', { angle });
+  }, { passive: true });
 }
 
 // ── Bot Toggle ─────────────────────────────────────────────
@@ -1005,25 +1525,27 @@ useBotsCheckbox?.addEventListener('change', () => {
 createRoomBtn.onclick = () => {
   const name  = document.getElementById('nameInput')?.value.trim();
   const color = ui.getSelectedColor();
+  const skin = ui.getSelectedSkin();
   const useBots  = useBotsCheckbox.checked;
   const botCount = parseInt(botCountInput.value) || 0;
   if (!name) return showToast('Ism kiriting!', 'error');
   if (!socket) return showToast('Server bilan ulanish yo\'q', 'error');
   createRoomBtn.disabled = true;
   createRoomBtn.textContent = 'Xona yaratilmoqda...';
-  socket.emit('create_room', { name, color, useBots, botCount });
+  socket.emit('create_room', { name, color, useBots, botCount, skin });
 };
 
 joinRoomBtn.onclick = () => {
   const name  = document.getElementById('nameInput')?.value.trim();
   const color = ui.getSelectedColor();
+  const skin = ui.getSelectedSkin();
   const roomCode = roomCodeInput.value.trim();
   if (!name) return showToast('Ism kiriting!', 'error');
   if (roomCode.length !== 4) return showToast("Xona kodi 4 ta raqamdan iborat bo'lishi kerak!", 'error');
   if (!socket) return showToast('Server bilan ulanish yo\'q', 'error');
   joinRoomBtn.disabled = true;
   joinRoomBtn.textContent = "Qo'shilinmoqda...";
-  socket.emit('join_room', { name, color, roomCode });
+  socket.emit('join_room', { name, color, roomCode, skin });
 };
 
 ui.startBtn.onclick = () => socket?.emit('start_game_request');
@@ -1364,12 +1886,12 @@ document.addEventListener('click', e => {
 
 function createHitParticles(x, y, color) {
   for (let i = 0; i < 12; i++) {
-    state.particles.push(new GameParticle(x, y, color));
+    state.particles.push(ParticlePool.get(x, y, color));
   }
 }
 
 function createFloatingText(x, y, text, color) {
-  state.floatingTexts.push(new FloatingText(x, y, text, color));
+  state.floatingTexts.push(FloatingTextPool.get(x, y, text, color));
 }
 
 // ── Game Loop ──────────────────────────────────────────────
@@ -1383,6 +1905,7 @@ function loop() {
 
   update(dt);
   draw();
+  drawMinimap();
   state.animId = requestAnimationFrame(loop);
 }
 
@@ -1390,17 +1913,27 @@ function update(dt) {
   const alive = state.players.filter(p => p.alive).length;
   ui.updateHUD(state.zoneTimer, alive, state.players.length, state.player);
   ui.updatePlayerList(state.players, state.player);
+  ui.updateMiniLeaderboard(state.players);
 
   // Update particles
   state.particles = state.particles.filter(p => {
     p.update(dt);
-    return p.life > 0;
+    if (p.life > 0) return true;
+    ParticlePool.release(p);
+    return false;
   });
 
   // Update floating texts
   state.floatingTexts = state.floatingTexts.filter(t => {
     t.update(dt);
-    return t.life > 0;
+    if (t.life > 0) return true;
+    FloatingTextPool.release(t);
+    return false;
+  });
+
+  // Interpolate players
+  state.players.forEach(p => {
+    if (typeof p.update === 'function') p.update(dt);
   });
 
   // Update screen shake decay
@@ -1436,35 +1969,160 @@ function draw() {
   }
   ctx.translate(camX, camY);
 
-  // Draw actual arena background
-  ctx.fillStyle = '#111124';
-  ctx.fillRect(0, 0, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
+  // Draw cached actual arena background
+  ctx.drawImage(getCachedBackground(), 0, 0);
 
-  // Grid background within the map bounds
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= GAME_CONFIG.WIDTH; x += 40) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, GAME_CONFIG.HEIGHT); ctx.stroke();
-  }
-  for (let y = 0; y <= GAME_CONFIG.HEIGHT; y += 40) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GAME_CONFIG.WIDTH, y); ctx.stroke();
+  // Draw cached obstacles
+  if (state.obstacles && state.obstacles.length > 0) {
+    ctx.drawImage(getCachedObstacles(), 0, 0);
+
+    // Draw dynamic obstacles (abilities)
+    state.obstacles.forEach(obs => {
+      if (obs.t === 'toxic_cloud') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.4)'; // Green toxic cloud
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#2ecc71';
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (obs.t === 'shield_wall') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(52, 152, 219, 0.8)'; // Blue shield wall
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#3498db';
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (obs.t === 'wood_wall') {
+        ctx.save();
+        ctx.fillStyle = '#8B4513'; // SaddleBrown
+        ctx.strokeStyle = '#654321'; // Dark brown border
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Add some wood texture lines
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(obs.x - obs.r + 5, obs.y - 5);
+        ctx.lineTo(obs.x + obs.r - 5, obs.y - 5);
+        ctx.moveTo(obs.x - obs.r + 2, obs.y + 5);
+        ctx.lineTo(obs.x + obs.r - 2, obs.y + 5);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
   }
 
-  // Draw Map Boundary Outer Red Border Glow
-  ctx.save();
-  ctx.strokeStyle = '#e94560';
-  ctx.lineWidth = 4;
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = '#e94560';
-  ctx.strokeRect(0, 0, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
-  ctx.restore();
+  // Draw vehicles (Hoverboard & Car)
+  state.vehicles.forEach(v => {
+    ctx.save();
+    ctx.translate(v.x, v.y);
+    ctx.rotate(v.angle);
+    
+    if (v.t === 'car') {
+      // Car Body
+      ctx.fillStyle = '#e74c3c'; // Red car
+      if (v.hp < v.maxHp * 0.3) ctx.fillStyle = '#c0392b';
+      ctx.beginPath();
+      ctx.roundRect(-30, -15, 60, 30, 8);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#2c3e50';
+      ctx.stroke();
+
+      // Windows
+      ctx.fillStyle = '#34495e';
+      ctx.fillRect(-10, -12, 20, 24); // Roof
+      ctx.fillStyle = '#87cefa'; // glass
+      ctx.fillRect(-5, -10, 10, 20); 
+
+      // Headlights
+      ctx.fillStyle = '#f1c40f';
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(28, -10, 4, 0, Math.PI * 2);
+      ctx.arc(28, 10, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Hoverboard Body
+      ctx.fillStyle = '#1abc9c';
+      if (v.hp < v.maxHp * 0.3) ctx.fillStyle = '#e74c3c'; // red if low HP
+      ctx.beginPath();
+      ctx.roundRect(-20, -10, 40, 20, 10);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+      
+      // Hoverboard glowing thrusters
+      ctx.fillStyle = '#00ffff';
+      ctx.beginPath();
+      ctx.arc(-15, 0, 4, 0, Math.PI * 2);
+      ctx.arc(15, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#00ffff';
+      ctx.fill();
+    }
+    
+    ctx.restore();
+    
+    // Draw vehicle HP if damaged
+    if (v.hp < v.maxHp) {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(v.x - 20, v.y - 25, 40, 5);
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(v.x - 20, v.y - 25, 40 * (v.hp / v.maxHp), 5);
+    }
+  });
 
   // Items
   state.items.forEach(it => it.draw(ctx));
 
+  // Airdrops
+  if (state.airdrops) {
+    state.airdrops.forEach(a => {
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      if (!a.opened) {
+        // Red box
+        ctx.fillStyle = '#e74c3c';
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#e74c3c';
+        ctx.fillRect(-15, -15, 30, 30);
+        // Cross
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-2, -10, 4, 20);
+        ctx.fillRect(-10, -2, 20, 4);
+        
+        // Upward glowing beam
+        ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(-10, 0);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(25, -100);
+        ctx.lineTo(-25, -100);
+        ctx.fill();
+      } else {
+        // Opened box
+        ctx.fillStyle = '#555';
+        ctx.fillRect(-15, -15, 30, 30);
+      }
+      ctx.restore();
+    });
+  }
+
   // Red Zone (Storm) Overlay
   ctx.save();
-  ctx.fillStyle = 'rgba(10, 10, 36, 0.65)';
+  // Changed to red tint
+  ctx.fillStyle = 'rgba(60, 10, 10, 0.65)';
   ctx.beginPath();
   ctx.rect(0, 0, GAME_CONFIG.WIDTH, GAME_CONFIG.HEIGHT);
   ctx.arc(state.zoneCx, state.zoneCy, state.zoneR, 0, Math.PI * 2, true);
@@ -1474,7 +2132,7 @@ function draw() {
   // Zone border pulsing glow
   ctx.save();
   const pulseFactor = 1 + Math.sin(performance.now() / 200) * 0.05;
-  ctx.strokeStyle = `rgba(77, 166, 255, ${0.6 + Math.sin(performance.now() / 150) * 0.2})`;
+  ctx.strokeStyle = `rgba(231, 76, 60, ${0.6 + Math.sin(performance.now() / 150) * 0.2})`;
   ctx.lineWidth = 2.5 * pulseFactor;
   ctx.setLineDash([8, 6]);
   ctx.beginPath();
@@ -1531,4 +2189,34 @@ function draw() {
   state.floatingTexts.forEach(t => t.draw(ctx));
 
   ctx.restore();
+}
+
+function drawMinimap() {
+  if (!minimapCtx) return;
+  const w = minimapCanvas.width;
+  const h = minimapCanvas.height;
+  
+  minimapCtx.clearRect(0, 0, w, h);
+  
+  // Scale factors
+  const scaleX = w / GAME_CONFIG.WIDTH;
+  const scaleY = h / GAME_CONFIG.HEIGHT;
+  
+  // Draw safe zone
+  if (state.zoneR > 0) {
+    minimapCtx.fillStyle = 'rgba(77, 166, 255, 0.25)';
+    minimapCtx.beginPath();
+    minimapCtx.arc(state.zoneCx * scaleX, state.zoneCy * scaleY, state.zoneR * Math.max(scaleX, scaleY), 0, Math.PI * 2);
+    minimapCtx.fill();
+  }
+  
+  // Draw players
+  state.players.forEach(p => {
+    if (!p.alive) return;
+    const isMain = state.player && p.id === state.player.id;
+    minimapCtx.fillStyle = isMain ? '#4da6ff' : '#e94560';
+    minimapCtx.beginPath();
+    minimapCtx.arc(p.x * scaleX, p.y * scaleY, isMain ? 3.5 : 2.5, 0, Math.PI * 2);
+    minimapCtx.fill();
+  });
 }

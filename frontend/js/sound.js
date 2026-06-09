@@ -23,7 +23,7 @@ class SoundManager {
     }
   }
 
-  play(type, customVolume = 1.0) {
+  play(type, customVolume = 1.0, panValue = 0) {
     this.init();
     this.resume();
     if (this.muted || !this.ctx) return;
@@ -33,7 +33,17 @@ class SoundManager {
     // Create master gain
     const masterGain = this.ctx.createGain();
     masterGain.gain.setValueAtTime(0.15 * customVolume, now); // keep it comfortable
-    masterGain.connect(this.ctx.destination);
+
+    // Create Stereo Panner
+    if (this.ctx.createStereoPanner) {
+      const panner = this.ctx.createStereoPanner();
+      // Clamp panValue between -1 and 1
+      panner.pan.setValueAtTime(Math.max(-1, Math.min(1, panValue)), now);
+      masterGain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      masterGain.connect(this.ctx.destination);
+    }
 
     switch (type) {
       case 'shoot_pistol':

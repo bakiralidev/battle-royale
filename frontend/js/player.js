@@ -45,11 +45,27 @@ export class Player {
     this.alive = data.alive;
     this.radius = 18; // Enlarged player radius (authoritative)
     this.shieldTimer = data.shieldTimer || 0;
+    this.speedTimer = data.speedTimer || 0;
     this.customEmojis = data.customEmojis || null;
     this.customSmiley = data.customSmiley || null;
+    this.invisible = data.invisible !== undefined ? data.invisible : (data.inv || false);
+    this.squadId = data.squadId !== undefined ? data.squadId : data.sq;
+    
+    // For interpolation
+    this.targetX = data.targetX !== undefined ? data.targetX : data.x;
+    this.targetY = data.targetY !== undefined ? data.targetY : data.y;
   }
 
-  draw(ctx, isMainPlayer) {
+  update(dt) {
+    if (this.targetX !== undefined && this.targetY !== undefined) {
+      // Lerp smooth movement
+      const lerpSpeed = 15;
+      this.x += (this.targetX - this.x) * lerpSpeed * dt;
+      this.y += (this.targetY - this.y) * lerpSpeed * dt;
+    }
+  }
+
+  draw(ctx, isMainPlayer, mainPlayer) {
     if (!this.alive) {
       // Draw death marker (ghostly body or cross)
       ctx.save();
@@ -69,6 +85,43 @@ export class Player {
     }
 
     const hpFrac = this.hp / this.maxHp;
+
+    // Check bush visibility
+    if (this.inBush && !isMainPlayer) {
+      // Hide if not main player, unless main player is also close
+      let shouldHide = true;
+      if (mainPlayer) {
+        const dist = Math.hypot(this.x - mainPlayer.x, this.y - mainPlayer.y);
+        if (dist < 100) {
+          shouldHide = false;
+        }
+      }
+      if (shouldHide) return;
+    }
+
+    // Check invisibility (Ninja ability)
+    if (this.invisible) {
+      if (!isMainPlayer) {
+        let isTeammate = false;
+        if (mainPlayer && mainPlayer.squadId && mainPlayer.squadId === this.squadId) {
+          isTeammate = true;
+        }
+        if (!isTeammate) return; // Don't draw if not teammate
+      }
+    }
+
+    // Set slight transparency if I am in bush or invisible
+    if (this.inBush && isMainPlayer) {
+      ctx.globalAlpha = 0.5;
+    }
+    if (this.invisible) {
+      ctx.globalAlpha = 0.3; // Very ghostly
+    }
+    if (this.inBush && isMainPlayer) {
+      ctx.globalAlpha = 0.6;
+    } else {
+      ctx.globalAlpha = 1.0;
+    }
 
     // Background sphere and shadow removed as requested to show only the smileys
 
@@ -127,6 +180,13 @@ export class Player {
           smiley = emojis.sad || '😢'; // Sad crying face when low health
         }
       }
+
+      // Skin overrides
+      if (this.skin && this.skin !== 'default') {
+        if (this.skin === 'ninja') smiley = '🥷';
+        else if (this.skin === 'robot') smiley = '🤖';
+        else if (this.skin === 'zombie') smiley = '🧟';
+      }
       // Emojis on Windows (Segoe UI Emoji) render with a vertical offset in Canvas.
       // Shift up slightly to center it inside the player's circle.
       const isWindows = typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.includes('Windows');
@@ -135,6 +195,18 @@ export class Player {
       ctx.restore();
     }
 
+    // Speed Boost trail effect
+    if (this.speedTimer > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#f1c40f'; // Yellow lightning
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.lineDashOffset = -performance.now() / 20; // Animated rotation
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // Weapon orbit representation
     if (this.weapon) {
@@ -190,7 +262,24 @@ export class Player {
     // Name plate
     ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.fillText(this.name, this.x, this.y - this.radius - 16);
+    
+    let isTeammate = false;
+    let isMe = false;
+    // Check if window.state exists
+    if (typeof window !== 'undefined' && window.state && window.state.player) {
+      isMe = (window.state.player.id === this.id);
+      isTeammate = (window.state.player.squadId === this.squadId && this.squadId !== null && this.squadId !== undefined);
+    }
+
+    if (isMe) {
+      ctx.fillStyle = '#f1c40f'; // Yellow for self
+    } else if (isTeammate) {
+      ctx.fillStyle = '#2ecc71'; // Green for teammates
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    }
+
+    const displayName = this.squadId ? `[S${this.squadId}] ${this.name}` : this.name;
+    ctx.fillText(displayName, this.x, this.y - this.radius - 16);
   }
 }

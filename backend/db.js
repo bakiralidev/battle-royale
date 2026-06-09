@@ -84,6 +84,10 @@ db.exec(`
     logged_in_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  -- Stage 8 Optimizations: Indexes
+  CREATE INDEX IF NOT EXISTS idx_users_wins_xp ON users(wins DESC, xp DESC);
+  CREATE INDEX IF NOT EXISTS idx_game_participants_user_id ON game_participants(user_id);
 `);
 
 // Migration to add avatar and custom_emojis columns if not already present
