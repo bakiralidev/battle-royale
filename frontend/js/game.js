@@ -8,6 +8,10 @@ import { FriendsPanel } from './friends.js';
 import { sounds } from './sound.js';
 import { SmileyEditor } from './smiley-editor.js';
 import { initBouncingWidgets } from './bouncing.js';
+import { Game3D } from './game3d.js';
+
+let is3DMode = false;
+let game3DEngine = null;
 
 // Particle class for juice effects
 class GameParticle {
@@ -164,8 +168,8 @@ function getCachedBackground() {
     bgCtx.fillStyle = '#111124';
     bgCtx.fillRect(w / 2, h / 2, w / 2, h / 2);
 
-    bgCtx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
-    bgCtx.lineWidth = 1;
+    bgCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    bgCtx.lineWidth = 2;
     for (let x = 0; x <= GAME_CONFIG.WIDTH; x += 40) {
       bgCtx.beginPath(); bgCtx.moveTo(x, 0); bgCtx.lineTo(x, GAME_CONFIG.HEIGHT); bgCtx.stroke();
     }
@@ -348,7 +352,21 @@ function bindSocketEvents() {
 
     ui.showGame();
     ui.overlay.style.display = 'none';
-    canvas.focus();
+    
+    if (is3DMode) {
+      canvas.style.display = 'none';
+      const canvas3d = document.getElementById('gameCanvas3D');
+      canvas3d.style.display = 'block';
+      canvas3d.focus();
+      if (!game3DEngine) {
+        game3DEngine = new Game3D(canvas3d);
+      }
+    } else {
+      canvas.style.display = 'block';
+      document.getElementById('gameCanvas3D').style.display = 'none';
+      canvas.focus();
+    }
+    
     state.running = true;
     lastDx = 0; lastDy = 0;
     if (state.animId) cancelAnimationFrame(state.animId);
@@ -766,6 +784,12 @@ document.getElementById('heroGuestBtn')?.addEventListener('click', () => {
 });
 
 document.getElementById('heroEnterLobbyBtn')?.addEventListener('click', () => {
+  is3DMode = false;
+  goToLobby();
+});
+
+document.getElementById('hero3DBtn')?.addEventListener('click', () => {
+  is3DMode = true;
   goToLobby();
 });
 
@@ -1235,17 +1259,22 @@ saveSettingsBtn?.addEventListener('click', async () => {
 // ── Keyboard & Mouse Input ─────────────────────────────────
 const keys = {};
 canvas.addEventListener('click', () => canvas.focus());
+const canvas3d = document.getElementById('gameCanvas3D');
+if (canvas3d) canvas3d.addEventListener('click', () => canvas3d.focus());
 
-canvas.addEventListener('mousedown', e => {
+function handleShootEvent(e, targetCanvas) {
   if (state.status !== 'playing' || !state.player || !state.player.alive) return;
-  const rect = canvas.getBoundingClientRect();
+  const rect = targetCanvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
-  const dx = clickX - canvas.width / 2;
-  const dy = clickY - canvas.height / 2;
+  const dx = clickX - targetCanvas.width / 2;
+  const dy = clickY - targetCanvas.height / 2;
   const angle = Math.atan2(dy, dx);
   socket?.emit('shoot', { angle });
-});
+}
+
+canvas.addEventListener('mousedown', e => handleShootEvent(e, canvas));
+if (canvas3d) canvas3d.addEventListener('mousedown', e => handleShootEvent(e, canvas3d));
 
 window.addEventListener('keydown', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
@@ -1904,7 +1933,13 @@ function loop() {
   lastFrameTime = now;
 
   update(dt);
-  draw();
+  
+  if (is3DMode && game3DEngine) {
+    game3DEngine.update(state);
+  } else {
+    draw();
+  }
+  
   drawMinimap();
   state.animId = requestAnimationFrame(loop);
 }
@@ -2132,8 +2167,8 @@ function draw() {
   // Zone border pulsing glow
   ctx.save();
   const pulseFactor = 1 + Math.sin(performance.now() / 200) * 0.05;
-  ctx.strokeStyle = `rgba(231, 76, 60, ${0.6 + Math.sin(performance.now() / 150) * 0.2})`;
-  ctx.lineWidth = 2.5 * pulseFactor;
+  ctx.strokeStyle = `rgba(255, 50, 50, ${0.8 + Math.sin(performance.now() / 150) * 0.2})`;
+  ctx.lineWidth = 8 * pulseFactor;
   ctx.setLineDash([8, 6]);
   ctx.beginPath();
   ctx.arc(state.zoneCx, state.zoneCy, state.zoneR, 0, Math.PI * 2);

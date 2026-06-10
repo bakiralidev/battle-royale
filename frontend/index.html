@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles/main.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
@@ -91,7 +92,7 @@
 
               <div id="heroUserBtns" class="hero-cta" style="display:none; flex-wrap: wrap;">
                 <button id="heroEnterLobbyBtn" class="btn-hero" style="background: linear-gradient(135deg, #3498db, #2ecc71); border-color: transparent;">▶ 2D O'yin (Boshlash)</button>
-                <button id="hero3DBtn" class="btn-hero" style="background: linear-gradient(135deg, #e74c3c, #f39c12); border-color: transparent;" onclick="alert('3D O\'yin ustida ish olib borilmoqda! Tez kunda...');">🔥 3D O'yin</button>
+                <button id="hero3DBtn" class="btn-hero" style="background: linear-gradient(135deg, #e74c3c, #f39c12); border-color: transparent;">🔥 3D O'yin (Boshlash)</button>
                 <button id="heroLeaderboardBtn" class="btn-hero-outline">🏆 Reyting ko'rish</button>
               </div>
             </div>
@@ -281,6 +282,7 @@
       </div>
 
       <canvas id="gameCanvas" width="680" height="480" tabindex="1"></canvas>
+      <canvas id="gameCanvas3D" tabindex="1" style="display:none;"></canvas>
 
       <!-- Minimap -->
       <canvas id="minimapCanvas" width="150" height="150"></canvas>
@@ -809,6 +811,7 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="js/game3d.js"></script>
   <script type="module" src="js/game.js"></script>
 </body>
 </html>
