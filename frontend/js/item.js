@@ -21,37 +21,48 @@ export class Item {
     if (this.type === 'weapon' && this.wt) {
       ctx.translate(this.x, this.y);
       ctx.rotate(this.angle);
-      ctx.font = '16px sans-serif';
+      ctx.font = '32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(this.wt.emoji, 0, 0);
       ctx.restore();
       
       // Timer bar under the weapon
-      ctx.fillStyle = 'rgba(255, 200, 0, 0.6)';
-      ctx.fillRect(this.x - 10, this.y + 12, 20 * frac, 3);
+      ctx.fillStyle = 'rgba(255, 200, 0, 0.8)';
+      ctx.fillRect(this.x - 15, this.y + 20, 30 * frac, 4);
     } else if (this.type === 'medkit') {
       // Medkit item
-      ctx.font = '16px sans-serif';
+      ctx.font = '32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('💊', this.x, this.y);
       ctx.restore();
       
       // Timer bar under the medkit
-      ctx.fillStyle = 'rgba(0, 220, 120, 0.6)';
-      ctx.fillRect(this.x - 10, this.y + 12, 20 * frac, 3);
+      ctx.fillStyle = 'rgba(0, 220, 120, 0.8)';
+      ctx.fillRect(this.x - 15, this.y + 20, 30 * frac, 4);
     } else if (this.type === 'shield') {
       // Shield item
-      ctx.font = '16px sans-serif';
+      ctx.font = '32px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('🛡️', this.x, this.y);
       ctx.restore();
       
       // Timer bar under the shield
-      ctx.fillStyle = 'rgba(0, 191, 255, 0.6)';
-      ctx.fillRect(this.x - 10, this.y + 12, 20 * frac, 3);
+      ctx.fillStyle = 'rgba(0, 191, 255, 0.8)';
+      ctx.fillRect(this.x - 15, this.y + 20, 30 * frac, 4);
+    } else if (this.type === 'speed_boost') {
+      // Speed boost item
+      ctx.font = '32px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚡', this.x, this.y);
+      ctx.restore();
+      
+      // Timer bar under the speed boost
+      ctx.fillStyle = 'rgba(241, 196, 15, 0.8)';
+      ctx.fillRect(this.x - 15, this.y + 20, 30 * frac, 4);
     } else {
       ctx.restore();
     }

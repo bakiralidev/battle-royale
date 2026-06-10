@@ -13,6 +13,7 @@ export class UIManager {
     this.weaponInfo = document.getElementById('weaponInfo');
     this.hpInfo = document.getElementById('hpInfo');
     this.playersPanel = document.getElementById('playersPanel');
+    this.hudLeaderboardList = document.getElementById('hudLeaderboardList');
     
     this.overlay = document.getElementById('overlay');
     this.overlayTitle = document.getElementById('overlayTitle');
@@ -20,6 +21,7 @@ export class UIManager {
     this.restartBtn = document.getElementById('restartBtn');
     
     this.selectedColor = null;
+    this.selectedSkin = 'default';
   }
 
   initColorPicker(colors, colorNames, defaultIndex = 0) {
@@ -54,6 +56,21 @@ export class UIManager {
 
   getSelectedColor() {
     return this.selectedColor;
+  }
+
+  initSkinPicker() {
+    const skinButtons = document.querySelectorAll('.skin-btn');
+    skinButtons.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        skinButtons.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        this.selectedSkin = btn.dataset.skin;
+      });
+    });
+  }
+
+  getSelectedSkin() {
+    return this.selectedSkin;
   }
 
   showGame() {
@@ -110,6 +127,31 @@ export class UIManager {
       }
       
       this.playersPanel.appendChild(pDiv);
+    });
+  }
+
+  updateMiniLeaderboard(players) {
+    if (!this.hudLeaderboardList) return;
+    
+    // Sort by kills (descending), take top 5
+    const topPlayers = [...players].sort((a, b) => (b.kills || 0) - (a.kills || 0)).slice(0, 5);
+    
+    this.hudLeaderboardList.innerHTML = '';
+    topPlayers.forEach(p => {
+      if (!p.kills) return; // Hide if 0 kills maybe? Let's show even if 0 if we want, but better to show only those with >0 kills or top 3 anyway.
+      const li = document.createElement('li');
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'name';
+      nameSpan.textContent = p.name;
+      nameSpan.style.color = p.color;
+      
+      const killsSpan = document.createElement('span');
+      killsSpan.className = 'kills';
+      killsSpan.textContent = p.kills + ' ☠️';
+      
+      li.appendChild(nameSpan);
+      li.appendChild(killsSpan);
+      this.hudLeaderboardList.appendChild(li);
     });
   }
 

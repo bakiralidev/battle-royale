@@ -141,11 +141,11 @@ io.on('connection', (socket) => {
   });
 
   // Action 1: Create a room
-  socket.on('create_room', ({ name, color, useBots, botCount }) => {
+  socket.on('create_room', ({ name, color, useBots, botCount, skin }) => {
     const roomCode = generateRoomCode();
     const game = new GameStateManager(roomCode, socket.id, useBots, botCount);
     const su = socketUsers.get(socket.id);
-    game.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null);
+    game.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null, skin || 'default');
 
     rooms.set(roomCode, game);
     socket.roomCode = roomCode;
@@ -166,7 +166,7 @@ io.on('connection', (socket) => {
   });
 
   // Action 2: Join an existing room
-  socket.on('join_room', ({ name, color, roomCode }) => {
+  socket.on('join_room', ({ name, color, roomCode, skin }) => {
     const code = String(roomCode).trim();
     const game = rooms.get(code);
 
@@ -181,7 +181,7 @@ io.on('connection', (socket) => {
     }
 
     const su = socketUsers.get(socket.id);
-    game.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null);
+    game.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null, skin || 'default');
     socket.roomCode = code;
     socket.join(code);
 
@@ -242,6 +242,8 @@ io.on('connection', (socket) => {
 
         } else if (event === 'combat_hit') {
           io.to(roomCode).emit('combat_event', { type: 'hit', detail: data });
+        } else if (event === 'kill_event') {
+          io.to(roomCode).emit('kill_event', data);
         } else if (event === 'game_ended') {
           io.to(roomCode).emit('game_ended', data);
           await saveGameResult(game, data, roomCode);
@@ -261,6 +263,27 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('action', () => {
+    const roomCode = socket.roomCode;
+    if (roomCode) {
+      rooms.get(roomCode)?.handlePlayerAction(socket.id);
+    }
+  });
+
+  socket.on('use_ability', () => {
+    const roomCode = socket.roomCode;
+    if (roomCode) {
+      rooms.get(roomCode)?.handlePlayerAbility(socket.id);
+    }
+  });
+
+  socket.on('build_wall', () => {
+    const roomCode = socket.roomCode;
+    if (roomCode) {
+      rooms.get(roomCode)?.handlePlayerBuildWall(socket.id);
+    }
+  });
+
   // Action 4.5: Shooting
   socket.on('shoot', ({ angle }) => {
     const roomCode = socket.roomCode;
@@ -274,6 +297,25 @@ io.on('connection', (socket) => {
         }
       }
     }
+  });
+
+  // Action 4.6: Emotes
+  socket.on('emote', (emoteString) => {
+    const roomCode = socket.roomCode;
+    if (roomCode) {
+      const game = rooms.get(roomCode);
+      if (game && game.status === 'playing') {
+        const player = game.activePlayers.find(p => p.id === socket.id);
+        if (player && player.alive) {
+          io.to(roomCode).emit('player_emote', { id: socket.id, emote: emoteString });
+        }
+      }
+    }
+  });
+
+  // Action 4.7: Ping/Pong for Latency
+  socket.on('ping', (clientTime) => {
+    socket.emit('pong', clientTime);
   });
 
   // Action 4.7: Restart game (host only, solo vs bots)
@@ -500,7 +542,10 @@ setInterval(() => {
         }
       });
 
-      io.to(roomCode).emit('state_update', game.getStatePayload());
+      // Send throttled state to each active human player individually
+      game.lobbyPlayers.forEach((lp, sid) => {
+        io.to(sid).emit('state_update', game.getStatePayloadFor(sid));
+      });
     } else if (game.status === 'ended') {
       io.to(roomCode).emit('state_update', game.getStatePayload());
     }

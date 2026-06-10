@@ -967,6 +967,27 @@ input[type="number"]:focus,
   box-shadow: 0 0 12px currentColor;
 }
 
+/* ── Skin Picker ────────────────────────────────────────── */
+.skin-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.skin-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.skin-btn:hover { background: rgba(255, 255, 255, 0.15); }
+.skin-btn.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(77, 166, 255, 0.5);
+}
+
 /* ============================================================
    AUTH MODALS
    ============================================================ */
@@ -1047,6 +1068,55 @@ input[type="number"]:focus,
 .hud-item { font-size: 13px; color: var(--text2); font-weight: 500; }
 .hud-item span { color: var(--accent); font-weight: 700; }
 
+.hud-leaderboard {
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  z-index: 10;
+  width: 180px;
+  background: rgba(8,8,24,0.7);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.hud-leaderboard h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text3);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 4px;
+}
+
+.hud-leaderboard ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.hud-leaderboard li {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.hud-leaderboard li .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.hud-leaderboard li .kills {
+  font-weight: bold;
+  color: var(--accent);
+}
+
 #gameCanvas {
   position: absolute;
   top: 0;
@@ -1056,6 +1126,21 @@ input[type="number"]:focus,
   border: none;
   display: block;
   outline: none;
+}
+
+#minimapCanvas {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: rgba(8, 8, 24, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  pointer-events: none;
 }
 
 #playersPanel {
@@ -1936,4 +2021,92 @@ input[type="number"]:focus,
   .sm-tab-content-container {
     overflow-y: visible;
   }
+}
+
+/* ── Portrait Mode Warning ──────────────────────────────── */
+#portraitWarning {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 24, 0.95);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 30px;
+  backdrop-filter: blur(10px);
+}
+
+@media screen and (orientation: landscape) {
+  #portraitWarning {
+    display: none !important;
+  }
+}
+
+@media screen and (min-width: 900px) {
+  #portraitWarning {
+    display: none !important;
+  }
+}
+
+/* ============================================================
+   KILL FEED & PING (Stage 7)
+   ============================================================ */
+.kill-feed {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.kill-feed-item {
+  background: rgba(8, 8, 24, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards, fadeOut 0.5s ease-in 4.5s forwards;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.kf-killer { color: var(--accent); }
+.kf-victim { color: #e74c3c; }
+.kf-weapon { font-size: 16px; opacity: 0.9; }
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(50px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+.ping-display {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8, 8, 24, 0.6);
+  border-radius: 20px;
+  padding: 4px 12px;
+  color: #a0aec0;
+  font-size: 13px;
+  font-family: monospace;
+  font-weight: bold;
+  pointer-events: none;
+  z-index: 100;
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
