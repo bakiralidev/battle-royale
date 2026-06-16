@@ -88,6 +88,18 @@ db.exec(`
   -- Stage 8 Optimizations: Indexes
   CREATE INDEX IF NOT EXISTS idx_users_wins_xp ON users(wins DESC, xp DESC);
   CREATE INDEX IF NOT EXISTS idx_game_participants_user_id ON game_participants(user_id);
+
+  CREATE TABLE IF NOT EXISTS player_stats (
+    player_id TEXT PRIMARY KEY,
+    total_games INTEGER DEFAULT 0,
+    total_wins INTEGER DEFAULT 0,
+    total_kills INTEGER DEFAULT 0,
+    total_damage INTEGER DEFAULT 0,
+    current_streak INTEGER DEFAULT 0,
+    best_streak INTEGER DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (player_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 // Migration to add avatar and custom_emojis columns if not already present
@@ -355,6 +367,47 @@ export const SessionDB = {
       ORDER BY logged_in_at DESC
       LIMIT ?
     `).all(userId, limit);
+  }
+};
+
+// =============================================
+// Player Stats
+// =============================================
+export const StatsDB = {
+  getOrCreate(playerId) {
+    let stats = db.prepare('SELECT * FROM player_stats WHERE player_id = ?').get(playerId);
+    if (!stats) {
+      db.prepare(`
+        INSERT OR IGNORE INTO player_stats (player_id, total_games, total_wins, total_kills, total_damage, current_streak, best_streak)
+        VALUES (?, 0, 0, 0, 0, 0, 0)
+      `).run(playerId);
+      stats = db.prepare('SELECT * FROM player_stats WHERE player_id = ?').get(playerId);
+    }
+    return stats;
+  },
+
+  update(playerId, { result, kills, damage }) {
+    this.getOrCreate(playerId);
+    const isWin = (result === 'win');
+    
+    // Get current streak to update best streak
+    const currentStats = db.prepare('SELECT current_streak, best_streak FROM player_stats WHERE player_id = ?').get(playerId);
+    const newStreak = isWin ? (currentStats.current_streak + 1) : 0;
+    const newBestStreak = Math.max(currentStats.best_streak, newStreak);
+    
+    db.prepare(`
+      UPDATE player_stats SET
+        total_games = total_games + 1,
+        total_wins = total_wins + ?,
+        total_kills = total_kills + ?,
+        total_damage = total_damage + ?,
+        current_streak = ?,
+        best_streak = ?,
+        updated_at = datetime('now')
+      WHERE player_id = ?
+    `).run(isWin ? 1 : 0, kills || 0, damage || 0, newStreak, newBestStreak, playerId);
+    
+    return db.prepare('SELECT * FROM player_stats WHERE player_id = ?').get(playerId);
   }
 };
 

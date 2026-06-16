@@ -137,7 +137,10 @@ export const WEAPON_TYPES = [
   { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6, spread: 0.05, recoil: 3 },
   { name: 'Sniper', dmg: 40, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3, spread: 0, recoil: 6 },
   { name: 'Shotgun', dmg: 12, color: '#e67e22', emoji: '💥', isRanged: true, maxAmmo: 5, spread: 0.3, recoil: 5 },
-  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true, spread: 0.05, recoil: 8 }
+  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true, spread: 0.05, recoil: 8 },
+  { name: 'SMG', dmg: 8, color: '#2ecc71', emoji: '🔫', isRanged: true, maxAmmo: 20, spread: 0.15, recoil: 1, fireRate: 80 },
+  { name: 'Granat', dmg: 35, color: '#f1c40f', emoji: '💣', isRanged: true, maxAmmo: 2, isExplosive: true, fuseTime: 2.5, spread: 0.2, recoil: 0 },
+  { name: 'Kamon', dmg: 30, color: '#1abc9c', emoji: '🏹', isRanged: true, maxAmmo: 8, spread: 0, recoil: 0, isPiercing: true }
 ];
 
 export const GAME_CONFIG = {
@@ -170,6 +173,7 @@ export class ServerPlayer {
     this.hp = 100;
     this.maxHp = 100;
     this.kills = 0;
+    this.damageDealt = 0;
     this.skin = skin;
     this.dx = 0;
     this.dy = 0;
@@ -193,6 +197,7 @@ export class ServerPlayer {
     this.abilityCooldown = 0;
     this.buildCooldown = 0;
     this.invisible = false;
+    this.inSpeedZone = false;
 
     // Bot-specific AI variables
     this.aimTimer = 0;
@@ -217,6 +222,7 @@ export class ServerPlayer {
 
   updatePhysics(dt, isDriving = false) {
     if (!this.alive) return;
+    this.inSpeedZone = false;
 
     // Decay shield timer
     if (this.shieldTimer > 0) {
@@ -267,7 +273,7 @@ export class ServerPlayer {
 
     // Normal movement
     let speed = this.isBot ? GAME_CONFIG.BOT_SPEED : GAME_CONFIG.PLAYER_SPEED;
-    if (this.speedTimer > 0) speed *= 1.5; // 50% speed boost
+    if (this.speedTimer > 0 || this.inSpeedZone) speed *= 1.5; // 50% speed boost
     if (isDriving) speed *= 2.5; // Hoverboard speed boost
 
     let nx = this.x + this.dx * speed * dt * 60;
@@ -364,6 +370,19 @@ export class ServerPlayer {
       let target = null;
       let minD = 9999;
 
+      // Target closest player (enemies)
+      let closestEnemy = null;
+      let closestEnemyDist = 9999;
+      alivePlayers.forEach(q => {
+        if (q === this) return;
+        const d = Math.hypot(q.x - this.x, q.y - this.y);
+        if (q.inBush && d > 80) return; // Ignore enemies hidden in bush unless very close
+        if (d < closestEnemyDist) {
+          closestEnemyDist = d;
+          closestEnemy = q;
+        }
+      });
+
       // If bot has no weapon, look for nearest item (prefer weapon, then shield, then medkit)
       if (!this.weapon) {
         items.forEach(it => {
@@ -375,17 +394,29 @@ export class ServerPlayer {
         });
       }
 
-      // If bot has a weapon or no items exist, target closest player
-      if (!target || this.weapon) {
-        alivePlayers.forEach(q => {
-          if (q === this) return;
-          const d = Math.hypot(q.x - this.x, q.y - this.y);
-          if (q.inBush && d > 80) return; // Ignore enemies hidden in bush unless very close
-          if (d < minD) {
-            minD = d;
-            target = { x: q.x, y: q.y };
+      // If bot has a weapon or no items exist, target closest enemy
+      if ((!target || this.weapon) && closestEnemy) {
+        target = { x: closestEnemy.x, y: closestEnemy.y };
+        minD = closestEnemyDist;
+      }
+
+      // Medkit izlash (HP < 50 da)
+      if (this.hp < 50) {
+        let nearestMedkit = null;
+        let medkitD = 9999;
+        items.forEach(it => {
+          if (it.type === 'medkit') {
+            const d = Math.hypot(it.x - this.x, it.y - this.y);
+            if (d < medkitD) {
+              medkitD = d;
+              nearestMedkit = it;
+            }
           }
         });
+        if (nearestMedkit) {
+          target = { x: nearestMedkit.x, y: nearestMedkit.y };
+          minD = medkitD;
+        }
       }
 
       // Keep bot inside safe zone
@@ -399,8 +430,19 @@ export class ServerPlayer {
       } else if (target) {
         const ang = Math.atan2(target.y - this.y, target.x - this.x);
         const spd = 0.8 + Math.random() * 0.8;
-        this.dx = Math.cos(ang) * spd;
-        this.dy = Math.sin(ang) * spd;
+        
+        // 1. Zigzag / strafe harakat qo'shing
+        this.strafeAngle = (this.strafeAngle || 0) + dt * 2.5;
+        const strafeOffset = Math.cos(this.strafeAngle) * 0.6;
+        this.dx = Math.cos(ang) * spd + Math.cos(ang + Math.PI / 2) * strafeOffset;
+        this.dy = Math.sin(ang) * spd + Math.sin(ang + Math.PI / 2) * strafeOffset;
+        
+        // 2. HP past bo'lsa qochish
+        if (this.hp < 30 && closestEnemyDist < 200 && closestEnemy) {
+          const escapeAng = Math.atan2(closestEnemy.y - this.y, closestEnemy.x - this.x);
+          this.dx = -Math.cos(escapeAng) * 1.5;
+          this.dy = -Math.sin(escapeAng) * 1.5;
+        }
       }
     }
 
@@ -494,19 +536,21 @@ export class ServerItem {
 }
 
 export class ServerAirdrop {
-  constructor(x, y) {
+  constructor(x, y, type = 'airdrop') {
     this.id = Math.random();
     this.x = x;
     this.y = y;
-    this.radius = 25;
+    this.radius = type === 'loot_crate' ? 18 : 25;
     this.opened = false;
+    this.type = type;
   }
   serialize() {
     return {
       i: this.id,
       x: Math.round(this.x),
       y: Math.round(this.y),
-      o: this.opened
+      o: this.opened,
+      t: this.type
     };
   }
 }
@@ -581,11 +625,21 @@ export class ServerBullet {
     const speed = isExplosive ? 350 : 550;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
+    
+    this.isGrenade = false;
+    this.isPiercing = false;
+    this.piercedPlayers = [];
   }
 
   update(dt) {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
+    
+    if (this.isGrenade) {
+      this.vx *= 0.92;
+      this.vy *= 0.92;
+    }
+    
     this.life -= dt;
     
     if (this.x < 0 || this.x > GAME_CONFIG.WIDTH || this.y < 0 || this.y > GAME_CONFIG.HEIGHT) {
@@ -604,6 +658,42 @@ export class ServerBullet {
     };
   }
 }
+
+class BulletPool {
+  constructor() {
+    this.pool = [];
+  }
+  
+  get(id, x, y, angle, dmg, ownerId, isExplosive = false) {
+    if (this.pool.length > 0) {
+      const b = this.pool.pop();
+      b.id = id;
+      b.x = x;
+      b.y = y;
+      b.radius = isExplosive ? 8 : 4;
+      b.dmg = dmg;
+      b.ownerId = ownerId;
+      b.isExplosive = isExplosive;
+      b.life = 1.5;
+      
+      const speed = isExplosive ? 350 : 550;
+      b.vx = Math.cos(angle) * speed;
+      b.vy = Math.sin(angle) * speed;
+      
+      b.isGrenade = false;
+      b.isPiercing = false;
+      b.piercedPlayers = [];
+      return b;
+    }
+    return new ServerBullet(id, x, y, angle, dmg, ownerId, isExplosive);
+  }
+  
+  release(b) {
+    this.pool.push(b);
+  }
+}
+export const bulletPool = new BulletPool();
+
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
@@ -678,6 +768,26 @@ function spawnItems(zoneR, zoneCx, zoneCy, numWeapons = GAME_CONFIG.MAX_WEAPON_S
   return items;
 }
 
+function spawnBuilding(bx, by, width, height, obstacles) {
+  const wallRadius = 25;
+  const step = 40; // distance between wall circles
+  
+  // Top and bottom walls
+  for (let x = bx; x <= bx + width; x += step) {
+    // Leave a gap for the door on the bottom wall in the middle
+    if (x < bx + width/2 - 30 || x > bx + width/2 + 30) {
+      obstacles.push(new ServerObstacle(x, by, wallRadius, 'wood_wall')); // top wall
+    }
+    obstacles.push(new ServerObstacle(x, by + height, wallRadius, 'wood_wall')); // bottom wall
+  }
+  
+  // Left and right walls
+  for (let y = by + step; y < by + height; y += step) {
+    obstacles.push(new ServerObstacle(bx, y, wallRadius, 'wood_wall')); // left wall
+    obstacles.push(new ServerObstacle(bx + width, y, wallRadius, 'wood_wall')); // right wall
+  }
+}
+
 export class GameStateManager {
   constructor(roomCode, hostId, useBots = true, botCount = 11) {
     this.roomCode = roomCode;
@@ -710,6 +820,7 @@ export class GameStateManager {
     this.lobbyTimer = 0; // seconds before resetting to lobby
     this.itemSpawnTimer = 0;
     this.airdropTimer = 0;
+    this.mapEventTimer = 0;
     this.attackTimers = {};
     
     this.lastUpdate = 0;
@@ -764,16 +875,29 @@ export class GameStateManager {
       return;
     }
 
-    // Open nearest unopened airdrop
+    // Open nearest unopened airdrop / loot crate
     const airdrop = this.airdrops.find(a => !a.opened && Math.hypot(a.x - player.x, a.y - player.y) < 60);
     if (airdrop) {
       airdrop.opened = true;
-      // Drop Sniper or Rocket
-      const topWeapons = WEAPON_TYPES.filter(w => w.name === 'Sniper' || w.name === 'Rocket');
-      const dropWeapon = topWeapons[randInt(0, topWeapons.length)];
-      this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'weapon', dropWeapon));
-      // Drop Medkit
-      this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'medkit'));
+      if (airdrop.type === 'loot_crate') {
+        const midWeapons = WEAPON_TYPES.filter(w => w.name === 'SMG' || w.name === 'Miltiq' || w.name === 'Shotgun' || w.name === 'Kamon');
+        const dropWeapon = midWeapons[randInt(0, midWeapons.length)];
+        this.items.push(new ServerItem(airdrop.x + rand(-15, 15), airdrop.y + rand(-15, 15), 'weapon', dropWeapon));
+        if (Math.random() > 0.5) {
+          const type = Math.random() > 0.5 ? 'shield' : 'speed_boost';
+          this.items.push(new ServerItem(airdrop.x + rand(-15, 15), airdrop.y + rand(-15, 15), type));
+        } else {
+          this.items.push(new ServerItem(airdrop.x + rand(-15, 15), airdrop.y + rand(-15, 15), 'medkit'));
+        }
+      } else {
+        const topWeapons = WEAPON_TYPES.filter(w => w.name === 'Sniper' || w.name === 'Rocket' || w.name === 'Granat');
+        const dropWeapon = topWeapons[randInt(0, topWeapons.length)];
+        this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'weapon', dropWeapon));
+        this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'medkit'));
+        if (Math.random() > 0.3) {
+          this.items.push(new ServerItem(airdrop.x + rand(-20, 20), airdrop.y + rand(-20, 20), 'shield'));
+        }
+      }
     }
   }
 
@@ -852,10 +976,14 @@ export class GameStateManager {
     const now = Date.now();
     const lastShot = this.attackTimers[`shoot-${socketId}`] || 0;
     
-    let cooldown = 350;
-    if (player.weapon.name === 'Sniper') cooldown = 800;
-    else if (player.weapon.name === 'Shotgun') cooldown = 600;
-    else if (player.weapon.name === 'Rocket') cooldown = 1200;
+    let cooldown = player.weapon.fireRate || 350;
+    if (!player.weapon.fireRate) {
+      if (player.weapon.name === 'Sniper') cooldown = 800;
+      else if (player.weapon.name === 'Shotgun') cooldown = 600;
+      else if (player.weapon.name === 'Rocket') cooldown = 1200;
+      else if (player.weapon.name === 'Granat') cooldown = 800;
+      else if (player.weapon.name === 'Kamon') cooldown = 700;
+    }
 
     if (now - lastShot < cooldown) return false;
     this.attackTimers[`shoot-${socketId}`] = now;
@@ -877,12 +1005,28 @@ export class GameStateManager {
 
     if (player.weapon.name === 'Shotgun') {
       const shotSpread = spread || 0.25; // ~15 degrees
-      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle - shotSpread, player.weapon.dmg, socketId, false));
-      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle, player.weapon.dmg, socketId, false));
-      this.bullets.push(new ServerBullet(Math.random(), bx, by, angle + shotSpread, player.weapon.dmg, socketId, false));
+      this.bullets.push(bulletPool.get(Math.random(), bx, by, angle - shotSpread, player.weapon.dmg, socketId, false));
+      this.bullets.push(bulletPool.get(Math.random(), bx, by, angle, player.weapon.dmg, socketId, false));
+      this.bullets.push(bulletPool.get(Math.random(), bx, by, angle + shotSpread, player.weapon.dmg, socketId, false));
     } else {
       const actualAngle = angle + (Math.random() - 0.5) * spread * 2;
-      this.bullets.push(new ServerBullet(Math.random(), bx, by, actualAngle, player.weapon.dmg, socketId, player.weapon.isExplosive));
+      const isGrenade = (player.weapon.name === 'Granat');
+      const bullet = bulletPool.get(Math.random(), bx, by, actualAngle, player.weapon.dmg, socketId, player.weapon.isExplosive);
+      
+      if (isGrenade) {
+        bullet.isGrenade = true;
+        bullet.life = player.weapon.fuseTime || 2.5;
+        const throwSpeed = 200;
+        bullet.vx = Math.cos(actualAngle) * throwSpeed;
+        bullet.vy = Math.sin(actualAngle) * throwSpeed;
+      }
+      
+      if (player.weapon.isPiercing) {
+        bullet.isPiercing = true;
+        bullet.piercedPlayers = [];
+      }
+      
+      this.bullets.push(bullet);
     }
 
     if (player.ammo <= 0) {
@@ -929,6 +1073,8 @@ export class GameStateManager {
     this.zoneLastTick = Date.now();
     this.lastUpdate = Date.now();
     this.itemSpawnTimer = 8;
+    this.airdropTimer = 0;
+    this.mapEventTimer = 15; // first event in 15 seconds!
     this.attackTimers = {};
     
     // Spawn static obstacles (bushes)
@@ -942,6 +1088,23 @@ export class GameStateManager {
     this.items = spawnItems(initialZoneR, this.zoneCx, this.zoneCy);
     this.bullets = [];
     this.bombs = spawnBombs(6, initialZoneR, this.zoneCx, this.zoneCy);
+
+    // Spawn Buildings and Loot Crates inside them
+    spawnBuilding(this.zoneCx - 350, this.zoneCy - 250, 160, 120, this.obstacles);
+    spawnBuilding(this.zoneCx + 150, this.zoneCy - 250, 160, 120, this.obstacles);
+    spawnBuilding(this.zoneCx - 80, this.zoneCy + 150, 160, 120, this.obstacles);
+
+    // Place a loot crate in the center of each building
+    this.airdrops.push(new ServerAirdrop(this.zoneCx - 270, this.zoneCy - 190, 'loot_crate'));
+    this.airdrops.push(new ServerAirdrop(this.zoneCx + 230, this.zoneCy - 190, 'loot_crate'));
+    this.airdrops.push(new ServerAirdrop(this.zoneCx, this.zoneCy + 210, 'loot_crate'));
+
+    // Place random loot crates on the map
+    for (let i = 0; i < 4; i++) {
+      let x = rand(100, GAME_CONFIG.WIDTH - 100);
+      let y = rand(100, GAME_CONFIG.HEIGHT - 100);
+      this.airdrops.push(new ServerAirdrop(x, y, 'loot_crate'));
+    }
     
     // Spawn Vehicles
     this.vehicles = [];
@@ -1008,6 +1171,44 @@ export class GameStateManager {
     }
   }
 
+  explodeBullet(bullet, eventCallback) {
+    const splashPotentials = this.grid.query(bullet.x, bullet.y, 80 + 25);
+    for (const p of splashPotentials) {
+      const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
+      if (attacker && attacker.squadId === p.squadId) continue; // Friendly fire off
+
+      const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
+      if (dist < 80) { // explosion radius
+         const wasAlive = p.alive;
+         const oldHp = p.hp;
+         p.takeDamage(bullet.dmg);
+         const damageTaken = oldHp - p.hp;
+         if (attacker && damageTaken > 0) {
+           attacker.damageDealt = (attacker.damageDealt || 0) + damageTaken;
+         }
+         if (wasAlive && !p.alive && attacker) attacker.kills++;
+         
+         const ang = Math.atan2(p.y - bullet.y, p.x - bullet.x);
+         p.pushDx += Math.cos(ang) * 4;
+         p.pushDy += Math.sin(ang) * 4;
+
+         if (eventCallback) {
+           eventCallback('combat_hit', {
+             a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
+             b: { id: p.id, name: p.name }
+           });
+           if (wasAlive && !p.alive) {
+             eventCallback('kill_event', {
+               killer: attacker ? attacker.name : 'Unknown',
+               victim: p.name,
+               weapon: bullet.isGrenade ? 'Granat' : (attacker && attacker.weapon ? attacker.weapon.name : 'Rocket')
+             });
+           }
+         }
+      }
+    }
+  }
+
   update(dt, eventCallback) {
     if (this.status !== 'playing') return;
 
@@ -1041,15 +1242,19 @@ export class GameStateManager {
 
     const alivePlayers = this.activePlayers.filter(p => p.alive);
 
-    // Apply toxic cloud damage
+    // Apply heal_zone, speed_zone and toxic_cloud effects
     for (const p of alivePlayers) {
       for (const obs of this.obstacles) {
-        if (obs.type === 'toxic_cloud') {
-          const dist = Math.hypot(p.x - obs.x, p.y - obs.y);
-          if (dist <= obs.radius) {
+        const dist = Math.hypot(p.x - obs.x, p.y - obs.y);
+        if (dist <= obs.radius) {
+          if (obs.type === 'toxic_cloud') {
             if (p.id !== obs.ownerId || p.skin !== 'zombie') {
               p.takeDamage(10 * dt); // 10 damage per second
             }
+          } else if (obs.type === 'heal_zone') {
+            p.hp = Math.min(p.maxHp, p.hp + 12 * dt); // Heal 12 HP/sec
+          } else if (obs.type === 'speed_zone') {
+            p.inSpeedZone = true;
           }
         }
       }
@@ -1133,7 +1338,8 @@ export class GameStateManager {
 
     // Bomb-to-player collision check
     this.bombs = this.bombs.filter(bomb => {
-      for (const p of alivePlayers) {
+      const potentials = this.grid.query(bomb.x, bomb.y, bomb.radius + 20);
+      for (const p of potentials) {
         const dist = Math.hypot(p.x - bomb.x, p.y - bomb.y);
         if (dist < p.radius + bomb.radius) {
           p.takeDamage(80);
@@ -1156,9 +1362,16 @@ export class GameStateManager {
     }
 
     // Bullet updates and collision checks with Spatial Hashing
-    this.bullets = this.bullets.filter(bullet => {
+    const activeBullets = [];
+    for (const bullet of this.bullets) {
       const active = bullet.update(dt);
-      if (!active) return false;
+      if (!active) {
+        if (bullet.isGrenade) {
+          this.explodeBullet(bullet, eventCallback);
+        }
+        bulletPool.release(bullet);
+        continue;
+      }
 
       let hit = false;
       // Use spatial hash to get potential players
@@ -1168,6 +1381,7 @@ export class GameStateManager {
         if (p.id === bullet.ownerId) continue;
         const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
         if (attacker && attacker.squadId === p.squadId) continue; // Ignore teammates
+        if (bullet.piercedPlayers && bullet.piercedPlayers.includes(p.id)) continue;
         
         const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
         if (dist < p.radius + bullet.radius) {
@@ -1177,85 +1391,73 @@ export class GameStateManager {
       }
       
       if (hit) {
-        if (bullet.isExplosive) {
-           const splashPotentials = this.grid.query(bullet.x, bullet.y, 80 + 25);
-           for (const p of splashPotentials) {
-             const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
-             if (attacker && attacker.squadId === p.squadId) continue; // Friendly fire off
+        const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
+        const hitPlayer = potentials.find(p => {
+          if (p.id === bullet.ownerId) return false;
+          if (attacker && attacker.squadId === p.squadId) return false;
+          if (bullet.piercedPlayers && bullet.piercedPlayers.includes(p.id)) return false;
+          const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
+          return dist < p.radius + bullet.radius;
+        });
 
-             const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
-             if (dist < 80) { // explosion radius
-                const wasAlive = p.alive;
-                p.takeDamage(bullet.dmg);
-                if (wasAlive && !p.alive && attacker) attacker.kills++;
-                
-                const ang = Math.atan2(p.y - bullet.y, p.x - bullet.x);
-                p.pushDx += Math.cos(ang) * 4;
-                p.pushDy += Math.sin(ang) * 4;
+        if (hitPlayer) {
+          if (bullet.isExplosive) {
+            this.explodeBullet(bullet, eventCallback);
+            bulletPool.release(bullet);
+            continue;
+          } else {
+            const wasAlive = hitPlayer.alive;
+            const oldHp = hitPlayer.hp;
+            hitPlayer.takeDamage(bullet.dmg);
+            const damageTaken = oldHp - hitPlayer.hp;
+            if (attacker && damageTaken > 0) {
+              attacker.damageDealt = (attacker.damageDealt || 0) + damageTaken;
+            }
+            if (wasAlive && !hitPlayer.alive && attacker) attacker.kills++;
 
-                if (eventCallback) {
-                  eventCallback('combat_hit', {
-                    a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
-                    b: { id: p.id, name: p.name }
-                  });
-                  if (wasAlive && !p.alive) {
-                    eventCallback('kill_event', {
-                      killer: attacker ? attacker.name : 'Unknown',
-                      victim: p.name,
-                      weapon: attacker && attacker.weapon ? attacker.weapon.name : 'Rocket'
-                    });
-                  }
-                }
-             }
-           }
-        } else {
-           for (const p of potentials) {
-             if (p.id === bullet.ownerId) continue;
-             const attacker = this.activePlayers.find(ap => ap.id === bullet.ownerId);
-             if (attacker && attacker.squadId === p.squadId) continue;
+            if (eventCallback) {
+              eventCallback('combat_hit', {
+                a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
+                b: { id: hitPlayer.id, name: hitPlayer.name }
+              });
+              if (wasAlive && !hitPlayer.alive) {
+                eventCallback('kill_event', {
+                  killer: attacker ? attacker.name : 'Unknown',
+                  victim: hitPlayer.name,
+                  weapon: attacker && attacker.weapon ? attacker.weapon.name : 'Qurol'
+                });
+              }
+            }
 
-             const dist = Math.hypot(p.x - bullet.x, p.y - bullet.y);
-             if (dist < p.radius + bullet.radius) {
-                const wasAlive = p.alive;
-                p.takeDamage(bullet.dmg);
-                if (wasAlive && !p.alive && attacker) attacker.kills++;
-
-                if (eventCallback) {
-                  eventCallback('combat_hit', {
-                    a: attacker ? { id: attacker.id, name: attacker.name } : { id: 'unknown', name: 'Unknown' },
-                    b: { id: p.id, name: p.name }
-                  });
-                  if (wasAlive && !p.alive) {
-                    eventCallback('kill_event', {
-                      killer: attacker ? attacker.name : 'Unknown',
-                      victim: p.name,
-                      weapon: attacker && attacker.weapon ? attacker.weapon.name : 'Qurol'
-                    });
-                  }
-                }
-                break;
-             }
-           }
+            if (bullet.isPiercing) {
+              bullet.piercedPlayers.push(hitPlayer.id);
+            } else {
+              bulletPool.release(bullet);
+              continue;
+            }
+          }
         }
-        return false;
       }
-      return true;
-    });
+      activeBullets.push(bullet);
+    }
+    this.bullets = activeBullets;
 
     // Player-to-player pushback collisions & orbiting melee hits
-    for (let i = 0; i < alivePlayers.length; i++) {
-      for (let j = i + 1; j < alivePlayers.length; j++) {
-        const a = alivePlayers[i];
-        const b = alivePlayers[j];
-        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    for (const a of alivePlayers) {
+      const neighbors = this.grid.query(a.x, a.y, 50);
+      for (const b of neighbors) {
+        if (a.id === b.id) continue;
 
-        // Body boundary pushback (radius is 18, so 2 * radius = 36)
-        if (dist < 36) {
-          const ang = Math.atan2(b.y - a.y, b.x - a.x);
-          a.pushDx -= Math.cos(ang) * GAME_CONFIG.PUSHBACK_FORCE;
-          a.pushDy -= Math.sin(ang) * GAME_CONFIG.PUSHBACK_FORCE;
-          b.pushDx += Math.cos(ang) * GAME_CONFIG.PUSHBACK_FORCE;
-          b.pushDy += Math.sin(ang) * GAME_CONFIG.PUSHBACK_FORCE;
+        // Body boundary pushback (apply only if a.id < b.id to prevent duplicate application)
+        if (a.id < b.id) {
+          const dist = Math.hypot(a.x - b.x, a.y - b.y);
+          if (dist < 36) {
+            const ang = Math.atan2(b.y - a.y, b.x - a.x);
+            a.pushDx -= Math.cos(ang) * GAME_CONFIG.PUSHBACK_FORCE;
+            a.pushDy -= Math.sin(ang) * GAME_CONFIG.PUSHBACK_FORCE;
+            b.pushDx += Math.cos(ang) * GAME_CONFIG.PUSHBACK_FORCE;
+            b.pushDy += Math.sin(ang) * GAME_CONFIG.PUSHBACK_FORCE;
+          }
         }
 
         // Orbiting melee damage (knife only hits when its orbiting position intersects opponent)
@@ -1269,7 +1471,12 @@ export class GameStateManager {
             if (!this.attackTimers[combatKey] || now - this.attackTimers[combatKey] > GAME_CONFIG.ATTACK_COOLDOWN) {
               this.attackTimers[combatKey] = now;
               const wasAlive = b.alive;
+              const oldHp = b.hp;
               b.takeDamage(a.weapon.dmg);
+              const damageTaken = oldHp - b.hp;
+              if (damageTaken > 0) {
+                a.damageDealt = (a.damageDealt || 0) + damageTaken;
+              }
               if (wasAlive && !b.alive) a.kills++;
               if (eventCallback) {
                 eventCallback('combat_hit', {
@@ -1281,35 +1488,6 @@ export class GameStateManager {
                     killer: a.name,
                     victim: b.name,
                     weapon: a.weapon ? a.weapon.name : 'Pichoq'
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // B hits A
-        if (b.weapon && !b.weapon.isRanged) {
-          const wx = b.x + Math.cos(b.weaponAngle) * (b.radius + 8);
-          const wy = b.y + Math.sin(b.weaponAngle) * (b.radius + 8);
-          const distToA = Math.hypot(wx - a.x, wy - a.y);
-          if (distToA < a.radius + 6 && b.squadId !== a.squadId) {
-            const combatKey = `${b.id}-hits-${a.id}`;
-            if (!this.attackTimers[combatKey] || now - this.attackTimers[combatKey] > GAME_CONFIG.ATTACK_COOLDOWN) {
-              this.attackTimers[combatKey] = now;
-              const wasAlive = a.alive;
-              a.takeDamage(b.weapon.dmg);
-              if (wasAlive && !a.alive) b.kills++;
-              if (eventCallback) {
-                eventCallback('combat_hit', {
-                  a: { id: b.id, name: b.name },
-                  b: { id: a.id, name: a.name }
-                });
-                if (wasAlive && !a.alive) {
-                  eventCallback('kill_event', {
-                    killer: b.name,
-                    victim: a.name,
-                    weapon: b.weapon ? b.weapon.name : 'Pichoq'
                   });
                 }
               }
@@ -1336,6 +1514,82 @@ export class GameStateManager {
            victim: 'Airdrop tushdi!',
            weapon: '🪂'
          });
+      }
+    }
+
+    // Map Events Loop
+    this.mapEventTimer -= dt;
+    if (this.mapEventTimer <= 0) {
+      this.mapEventTimer = 35 + Math.random() * 15; // Every 35-50 seconds
+      
+      const MAP_EVENTS = ['airdrop_wave', 'bomb_rain', 'heal_zone', 'speed_zone'];
+      const eventType = MAP_EVENTS[Math.floor(Math.random() * MAP_EVENTS.length)];
+      
+      if (eventType === 'airdrop_wave') {
+        for (let i = 0; i < 3; i++) {
+          let x, y, tries = 0;
+          do {
+            x = rand(60, GAME_CONFIG.WIDTH - 60);
+            y = rand(60, GAME_CONFIG.HEIGHT - 60);
+            tries++;
+          } while (tries < 50 && Math.hypot(x - this.zoneCx, y - this.zoneCy) > this.zoneR - 50);
+          this.airdrops.push(new ServerAirdrop(x, y));
+        }
+        if (eventCallback) {
+          eventCallback('kill_event', {
+            killer: 'EVENT',
+            victim: 'Airdrop to\'lqini tushdi! (3x 🪂)',
+            weapon: '📦'
+          });
+        }
+      } else if (eventType === 'bomb_rain') {
+        const newBombs = spawnBombs(8, this.zoneR, this.zoneCx, this.zoneCy);
+        this.bombs.push(...newBombs);
+        if (eventCallback) {
+          eventCallback('kill_event', {
+            killer: 'EVENT',
+            victim: 'Bomba yomg\'iri boshlandi! (8x 💣)',
+            weapon: '⚡'
+          });
+        }
+      } else if (eventType === 'heal_zone') {
+        let x, y, tries = 0;
+        do {
+          x = rand(100, GAME_CONFIG.WIDTH - 100);
+          y = rand(100, GAME_CONFIG.HEIGHT - 100);
+          tries++;
+        } while (tries < 50 && Math.hypot(x - this.zoneCx, y - this.zoneCy) > this.zoneR - 100);
+        
+        const zone = new ServerObstacle(x, y, 200, 'heal_zone');
+        zone.timer = 15;
+        this.obstacles.push(zone);
+        
+        if (eventCallback) {
+          eventCallback('kill_event', {
+            killer: 'EVENT',
+            victim: 'Shifo hududi faollashdi! (➕)',
+            weapon: '💚'
+          });
+        }
+      } else if (eventType === 'speed_zone') {
+        let x, y, tries = 0;
+        do {
+          x = rand(100, GAME_CONFIG.WIDTH - 100);
+          y = rand(100, GAME_CONFIG.HEIGHT - 100);
+          tries++;
+        } while (tries < 50 && Math.hypot(x - this.zoneCx, y - this.zoneCy) > this.zoneR - 100);
+        
+        const zone = new ServerObstacle(x, y, 150, 'speed_zone');
+        zone.timer = 12;
+        this.obstacles.push(zone);
+        
+        if (eventCallback) {
+          eventCallback('kill_event', {
+            killer: 'EVENT',
+            victim: 'Tezlik hududi faollashdi! (⚡)',
+            weapon: '💛'
+          });
+        }
       }
     }
 
@@ -1368,6 +1622,9 @@ export class GameStateManager {
           this.status = 'lobby';
           this.activePlayers = [];
           this.items = [];
+          if (this.bullets) {
+            this.bullets.forEach(b => bulletPool.release(b));
+          }
           this.bullets = [];
           this.bombs = [];
           if (eventCallback) eventCallback('lobby_reset');

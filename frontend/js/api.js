@@ -115,8 +115,8 @@ export const api = {
   },
 
   // ── Stats API ─────────────────────────────────────
-  async getLeaderboard() {
-    const data = await this.get('/api/stats/leaderboard');
+  async getLeaderboard(sort = 'wins') {
+    const data = await this.get(`/api/stats/leaderboard?sort=${sort}`);
     return data.leaders;
   },
 
@@ -128,6 +128,12 @@ export const api = {
   async getLoginSessions() {
     const data = await this.get('/api/stats/sessions');
     return data.sessions;
+  },
+
+  async getPlayerStats(userId = null) {
+    const endpoint = userId ? `/api/stats/player-stats/${userId}` : '/api/stats/player-stats';
+    const data = await this.get(endpoint);
+    return data.stats;
   }
 };
 

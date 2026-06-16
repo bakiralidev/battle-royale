@@ -6,7 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 import { GameStateManager, GAME_CONFIG } from './game-state.js';
-import { db, UserDB, GameDB, SessionDB, FriendDB } from './db.js';
+import { db, UserDB, GameDB, SessionDB, FriendDB, StatsDB } from './db.js';
 import { verifyToken } from './middleware/auth.js';
 import authRouter from './routes/auth.js';
 import friendsRouter from './routes/friends.js';
@@ -156,13 +156,13 @@ io.on('connection', (socket) => {
 
     console.log(`Room created: ${roomCode} by ${name} (${socket.id}). Bots: ${useBots} (${botCount})`);
 
-    socket.emit('room_joined', {
+    io.to(roomCode).emit('room_joined', {
       roomCode,
       isHost: true,
       hostId: socket.id
     });
 
-    io.to(roomCode).emit('state_update', game.getStatePayload());
+    broadcastState(roomCode, game);
   });
 
   // Action 2: Join an existing room
@@ -195,7 +195,75 @@ io.on('connection', (socket) => {
       hostId: game.hostId
     });
 
-    io.to(code).emit('state_update', game.getStatePayload());
+    broadcastState(code, game);
+  });
+
+  // Action 2.5: Matchmaking Search
+  socket.on('matchmaking_search', ({ name, color, skin }) => {
+    const su = socketUsers.get(socket.id);
+    let winRate = 0;
+    
+    if (su && su.userId) {
+      const stats = StatsDB.getOrCreate(su.userId);
+      if (stats && stats.total_games > 0) {
+        winRate = (stats.total_wins / stats.total_games) * 100;
+      }
+    }
+    
+    // Determine bracket
+    let bracket = 'beginner';
+    if (winRate > 20 && winRate <= 50) bracket = 'intermediate';
+    else if (winRate > 50) bracket = 'expert';
+    
+    // Search for an existing matchmaking room of this bracket
+    let targetRoom = null;
+    for (const [code, game] of rooms.entries()) {
+      if (game.status === 'lobby' && game.bracket === bracket && game.lobbyPlayers.size < 12) {
+        targetRoom = game;
+        break;
+      }
+    }
+    
+    if (targetRoom) {
+      // Join existing room
+      const roomCode = targetRoom.roomCode;
+      targetRoom.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null, skin || 'default');
+      socket.roomCode = roomCode;
+      socket.join(roomCode);
+      
+      if (su) { su.displayName = su.displayName || name; su.color = color; }
+      
+      socket.emit('room_joined', {
+        roomCode,
+        isHost: false,
+        hostId: targetRoom.hostId
+      });
+      
+      broadcastState(roomCode, targetRoom);
+      console.log(`[Matchmaking] Joined ${name} to existing ${bracket} room: ${roomCode}`);
+    } else {
+      // Create new room for this bracket
+      const roomCode = generateRoomCode();
+      const game = new GameStateManager(roomCode, socket.id, true, 11);
+      game.bracket = bracket; // tag with bracket
+      
+      game.addLobbyPlayer(socket.id, name, color, su?.avatar || null, su?.customEmojis || null, su?.customSmiley || null, skin || 'default');
+      
+      rooms.set(roomCode, game);
+      socket.roomCode = roomCode;
+      socket.join(roomCode);
+      
+      if (su) { su.displayName = su.displayName || name; su.color = color; }
+      
+      socket.emit('room_joined', {
+        roomCode,
+        isHost: true,
+        hostId: socket.id
+      });
+      
+      broadcastState(roomCode, game);
+      console.log(`[Matchmaking] Created new ${bracket} room: ${roomCode} for ${name}`);
+    }
   });
 
   // Action 3: Start match (host only)
@@ -233,7 +301,7 @@ io.on('connection', (socket) => {
           io.to(roomCode).emit('countdown_tick', { seconds: data });
         } else if (event === 'game_started') {
           io.to(roomCode).emit('game_started');
-          io.to(roomCode).emit('state_update', game.getStatePayload());
+          broadcastState(roomCode, game);
           
           // Create DB game record
           game.dbGameId = GameDB.create(roomCode, new Date().toISOString(), game.botCount);
@@ -249,7 +317,7 @@ io.on('connection', (socket) => {
           await saveGameResult(game, data, roomCode);
         } else if (event === 'lobby_reset') {
           io.to(roomCode).emit('lobby_reset');
-          io.to(roomCode).emit('state_update', game.getStatePayload());
+          broadcastState(roomCode, game);
         }
       });
     }
@@ -313,6 +381,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Action 4.65: Minimap Ping Marker
+  socket.on('ping_marker', (data) => {
+    const roomCode = socket.roomCode;
+    if (roomCode) {
+      io.to(roomCode).emit('ping_marker_received', { playerId: socket.id, ...data });
+    }
+  });
+
   // Action 4.7: Ping/Pong for Latency
   socket.on('ping', (clientTime) => {
     socket.emit('pong', clientTime);
@@ -350,7 +426,7 @@ io.on('connection', (socket) => {
             io.to(roomCode).emit('countdown_tick', { seconds: data });
           } else if (event === 'game_started') {
             io.to(roomCode).emit('game_started');
-            io.to(roomCode).emit('state_update', game.getStatePayload());
+            broadcastState(roomCode, game);
             
             // Create DB game record
             game.dbGameId = GameDB.create(roomCode, new Date().toISOString(), game.botCount);
@@ -358,12 +434,14 @@ io.on('connection', (socket) => {
             game.participantInfos = participantInfos;
           } else if (event === 'combat_hit') {
             io.to(roomCode).emit('combat_event', { type: 'hit', detail: data });
+          } else if (event === 'kill_event') {
+            io.to(roomCode).emit('kill_event', data);
           } else if (event === 'game_ended') {
             io.to(roomCode).emit('game_ended', data);
             await saveGameResult(game, data, roomCode);
           } else if (event === 'lobby_reset') {
             io.to(roomCode).emit('lobby_reset');
-            io.to(roomCode).emit('state_update', game.getStatePayload());
+            broadcastState(roomCode, game);
           }
         });
       }
@@ -375,6 +453,7 @@ io.on('connection', (socket) => {
     const roomCode = socket.roomCode;
     const userInfo = socketUsers.get(socket.id);
     socketUsers.delete(socket.id);
+    lastSentStates.delete(socket.id);
 
     if (userInfo && userInfo.userId) {
       // Check if they have ANY other active socket connection
@@ -419,7 +498,7 @@ io.on('connection', (socket) => {
         game.cancelCountdown();
         rooms.delete(roomCode);
       } else {
-        io.to(roomCode).emit('state_update', game.getStatePayload());
+        broadcastState(roomCode, game);
       }
     }
   });
@@ -477,6 +556,11 @@ async function saveGameResult(game, data, roomCode) {
         // Update user stats if registered
         if (pInfo.userId) {
           UserDB.updateStats(pInfo.userId, result);
+          StatsDB.update(pInfo.userId, {
+            result,
+            kills: activePlayer?.kills || 0,
+            damage: activePlayer?.damageDealt || 0
+          });
           
           // Notify the player's socket of updated stats
           const playerSocket = [...io.sockets.sockets.values()]
@@ -518,6 +602,29 @@ async function saveGameResult(game, data, roomCode) {
 // =============================================
 // Authoritative Tick Loop
 // =============================================
+const lastSentStates = new Map(); // socketId -> lastSentStatePayload
+
+function getDelta(prev, curr) {
+  if (!prev) return curr;
+  const delta = {};
+  let keysChanged = 0;
+  for (const k in curr) {
+    if (JSON.stringify(prev[k]) !== JSON.stringify(curr[k])) {
+      delta[k] = curr[k];
+      keysChanged++;
+    }
+  }
+  return keysChanged > 0 ? delta : null;
+}
+
+function broadcastState(roomCode, game) {
+  // Clear lastSentStates cache for all lobby players of this game to force a full state update next frame
+  game.lobbyPlayers.forEach((lp, sid) => {
+    lastSentStates.delete(sid);
+  });
+  io.to(roomCode).emit('state_update', game.getStatePayload());
+}
+
 const TICK_RATE = 45;
 const TICK_INTERVAL = 1000 / TICK_RATE;
 let lastTickTime = Date.now();
@@ -542,12 +649,29 @@ setInterval(() => {
         }
       });
 
-      // Send throttled state to each active human player individually
+      // Send throttled state to each active human player individually with delta serialization
       game.lobbyPlayers.forEach((lp, sid) => {
-        io.to(sid).emit('state_update', game.getStatePayloadFor(sid));
+        const fullPayload = game.getStatePayloadFor(sid);
+        const lastPayload = lastSentStates.get(sid);
+        
+        let payloadToSend;
+        if (!lastPayload || game.tickCount % 45 === 0) {
+          // Send full state as baseline every 1s
+          payloadToSend = { isDelta: false, ...fullPayload };
+        } else {
+          const delta = getDelta(lastPayload, fullPayload);
+          if (delta) {
+            payloadToSend = { isDelta: true, delta };
+          } else {
+            payloadToSend = { isDelta: true, delta: {} };
+          }
+        }
+        
+        lastSentStates.set(sid, fullPayload);
+        io.to(sid).emit('state_update', payloadToSend);
       });
     } else if (game.status === 'ended') {
-      io.to(roomCode).emit('state_update', game.getStatePayload());
+      broadcastState(roomCode, game);
     }
   });
 }, TICK_INTERVAL);

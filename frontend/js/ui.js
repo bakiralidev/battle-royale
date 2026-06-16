@@ -9,6 +9,10 @@ export class UIManager {
     this.startBtn = document.getElementById('startBtn');
     
     this.zoneTimer = document.getElementById('zoneTimer');
+    this.zoneProgressCircle = document.getElementById('zoneProgressCircle');
+    this.zoneTimerText = document.getElementById('zoneTimerText');
+    this.squadHPPanel = document.getElementById('squadHPPanel');
+    
     this.aliveCount = document.getElementById('aliveCount');
     this.weaponInfo = document.getElementById('weaponInfo');
     this.hpInfo = document.getElementById('hpInfo');
@@ -85,8 +89,19 @@ export class UIManager {
   }
 
   updateHUD(zoneTime, alive, total, player) {
-    this.zoneTimer.textContent = `${zoneTime}s`;
+    if (this.zoneTimer) this.zoneTimer.textContent = `${zoneTime}s`;
     this.aliveCount.textContent = `${alive}/${total}`;
+
+    // Circular Zone Timer update
+    if (this.zoneTimerText) {
+      this.zoneTimerText.textContent = zoneTime;
+    }
+    if (this.zoneProgressCircle) {
+      const maxDuration = 60; // GAME_CONFIG.ZONE_DURATION
+      const pct = Math.max(0, Math.min(1.0, zoneTime / maxDuration));
+      const offset = 138 * (1 - pct);
+      this.zoneProgressCircle.style.strokeDashoffset = offset;
+    }
     
     if (player && player.alive) {
       this.weaponInfo.textContent = player.weapon 
@@ -159,5 +174,47 @@ export class UIManager {
     this.overlayTitle.textContent = win ? '🏆 G\'ALABA!' : '💀 O\'YIN TUGADI';
     this.overlayMsg.textContent = message;
     this.overlay.style.display = 'flex';
+  }
+
+  updateSquadPanel(players, mainPlayer) {
+    if (!this.squadHPPanel) return;
+    this.squadHPPanel.innerHTML = '';
+    
+    if (!mainPlayer || !mainPlayer.squadId) {
+      this.squadHPPanel.style.display = 'none';
+      return;
+    }
+    this.squadHPPanel.style.display = 'flex';
+    
+    // Get all players in the same squad
+    const squadMembers = players.filter(p => p.squadId === mainPlayer.squadId);
+    
+    squadMembers.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'squad-card' + (p.alive ? '' : ' dead');
+      card.style.borderLeft = `4px solid ${p.color}`;
+      
+      const name = document.createElement('div');
+      name.className = 'squad-name';
+      name.textContent = `${p.id === mainPlayer.id ? '★ ' : ''}${p.name}`;
+      
+      const hpBarWrap = document.createElement('div');
+      hpBarWrap.className = 'squad-hp-wrap';
+      
+      const hpBarFill = document.createElement('div');
+      hpBarFill.className = 'squad-hp-fill';
+      const hpPct = p.alive ? Math.max(0, Math.min(100, p.hp)) : 0;
+      hpBarFill.style.width = `${hpPct}%`;
+      
+      // Color based on HP
+      if (hpPct > 50) hpBarFill.style.backgroundColor = '#2ecc71';
+      else if (hpPct > 20) hpBarFill.style.backgroundColor = '#f1c40f';
+      else hpBarFill.style.backgroundColor = '#e74c3c';
+      
+      hpBarWrap.appendChild(hpBarFill);
+      card.appendChild(name);
+      card.appendChild(hpBarWrap);
+      this.squadHPPanel.appendChild(card);
+    });
   }
 }

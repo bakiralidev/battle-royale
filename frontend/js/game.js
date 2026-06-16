@@ -326,6 +326,8 @@ function bindSocketEvents() {
     lobbyWaiting.style.display = 'flex';
     displayRoomCode.textContent = roomCode;
     resetRoomBtns();
+    const mmModal = document.getElementById('matchmakingModal');
+    if (mmModal) mmModal.style.display = 'none';
   });
 
   socket.on('room_error', (msg) => {
@@ -371,16 +373,38 @@ function bindSocketEvents() {
     lastDx = 0; lastDy = 0;
     if (state.animId) cancelAnimationFrame(state.animId);
     sounds.play('countdown_start');
+    sounds.startAmbient();
     lastFrameTime = performance.now();
     loop();
   });
 
+  let cachedServerState = null;
+
+  function mergeDelta(prev, delta) {
+    if (!prev) return delta;
+    const merged = { ...prev };
+    for (const k in delta) {
+      if (delta[k] !== null && typeof delta[k] === 'object' && !Array.isArray(delta[k]) && prev[k] && typeof prev[k] === 'object' && !Array.isArray(prev[k])) {
+        merged[k] = mergeDelta(prev[k], delta[k]);
+      } else {
+        merged[k] = delta[k];
+      }
+    }
+    return merged;
+  }
+
   socket.on('state_update', (serverState) => {
+    if (serverState.isDelta) {
+      cachedServerState = mergeDelta(cachedServerState, serverState.delta);
+    } else {
+      cachedServerState = serverState;
+    }
+
     const prevPlayer = state.player;
-    state.status  = serverState.status;
+    state.status  = cachedServerState.status;
 
     // Map players from minified keys
-    const mappedPlayers = serverState.players.map(p => {
+    const mappedPlayers = cachedServerState.players.map(p => {
       const obj = {
         id: p.i, x: p.x, y: p.y, hp: p.h, weaponAngle: p.wa, alive: p.a, weapon: p.w, squadId: p.sq
       };
@@ -434,49 +458,49 @@ function bindSocketEvents() {
         state.players.push(np);
       }
     });
-    // Remove players that are no longer in serverState
+    // Remove players that are no longer in cachedServerState
     state.players = state.players.filter(p => mappedPlayers.some(mp => mp.id === p.id));
 
     // Map items from minified keys
-    state.items = serverState.items.map(it => new Item({
+    state.items = cachedServerState.items.map(it => new Item({
       id: it.i, x: it.x, y: it.y, type: it.t, wt: it.w, angle: it.a, timer: it.tm
     }));
 
     // Map bullets and bombs from minified keys
-    state.bullets = (serverState.bullets || []).map(b => ({
+    state.bullets = (cachedServerState.bullets || []).map(b => ({
       id: b.i, x: b.x, y: b.y, radius: b.r
     }));
-    state.bombs = (serverState.bombs || []).map(b => ({
+    state.bombs = (cachedServerState.bombs || []).map(b => ({
       id: b.i, x: b.x, y: b.y, radius: b.r
     }));
 
     // Map obstacles (bushes)
-    if (serverState.obstacles) {
-      state.obstacles = serverState.obstacles.map(o => ({
-        id: o.i, x: o.x, y: o.y, radius: o.r, type: o.t
+    if (cachedServerState.obstacles) {
+      state.obstacles = cachedServerState.obstacles.map(o => ({
+        id: o.i, x: o.x, y: o.y, radius: o.r, type: o.t, t: o.t
       }));
     }
 
     // Map vehicles
-    if (serverState.vehicles) {
-      state.vehicles = serverState.vehicles.map(v => ({
-        id: v.i, x: v.x, y: v.y, type: v.t, hp: v.h, maxHp: v.mh, angle: v.a, driverId: v.d
+    if (cachedServerState.vehicles) {
+      state.vehicles = cachedServerState.vehicles.map(v => ({
+        id: v.i, x: v.x, y: v.y, type: v.t, t: v.t, hp: v.h, maxHp: v.mh, angle: v.a, driverId: v.d
       }));
     }
 
     // Map airdrops
-    if (serverState.airdrops) {
-      state.airdrops = serverState.airdrops.map(a => ({
-        id: a.i, x: a.x, y: a.y, opened: a.o
+    if (cachedServerState.airdrops) {
+      state.airdrops = cachedServerState.airdrops.map(a => ({
+        id: a.i, x: a.x, y: a.y, opened: a.o, t: a.t, type: a.t
       }));
     }
 
-    state.zoneR   = serverState.zone.r;
-    state.zoneCx  = serverState.zone.cx;
-    state.zoneCy  = serverState.zone.cy;
-    state.zoneTimer = serverState.zone.timer;
+    state.zoneR   = cachedServerState.zone.r;
+    state.zoneCx  = cachedServerState.zone.cx;
+    state.zoneCy  = cachedServerState.zone.cy;
+    state.zoneTimer = cachedServerState.zone.timer;
     state.player  = state.players.find(p => p.id === socket.id);
-    state.isHost  = (socket.id === serverState.hostId);
+    state.isHost  = (socket.id === cachedServerState.hostId);
 
     // Dynamic Sound Checks
     if (state.player && prevPlayer) {
@@ -510,6 +534,7 @@ function bindSocketEvents() {
   });
 
   socket.on('game_ended', (data) => {
+    sounds.stopAmbient();
     const win = !!(state.player && data.winner && state.player.name === data.winner.name);
     ui.showEndGame(win, data.msg);
     if (win) {
@@ -569,9 +594,20 @@ function bindSocketEvents() {
 
     const killFeed = document.getElementById('killFeed');
     if (!killFeed) return;
+    
+    let weaponEmoji = '🔫';
+    const w = data.weapon;
+    if (w === 'Pichoq') weaponEmoji = '🔪';
+    else if (w === 'Miltiq') weaponEmoji = '🪃';
+    else if (w === 'Sniper') weaponEmoji = '🎯';
+    else if (w === 'Shotgun') weaponEmoji = '💥';
+    else if (w === 'Rocket') weaponEmoji = '🚀';
+    else if (w === 'Granat') weaponEmoji = '💣';
+    else if (w === 'Kamon') weaponEmoji = '🏹';
+
     const item = document.createElement('div');
     item.className = 'kill-feed-item';
-    item.innerHTML = `<span class="kf-killer">${data.killer}</span> <span class="kf-weapon">🔫</span> <span class="kf-victim">${data.victim}</span>`;
+    item.innerHTML = `<span class="kf-killer">${data.killer}</span> <span class="kf-weapon">${weaponEmoji}</span> <span class="kf-victim">${data.victim}</span>`;
     killFeed.appendChild(item);
     setTimeout(() => {
       if (killFeed.contains(item)) killFeed.removeChild(item);
@@ -583,6 +619,23 @@ function bindSocketEvents() {
     if (p) {
       createFloatingText(p.x, p.y - p.radius - 20, data.emote, '#ffffff');
     }
+  });
+
+  socket.on('ping_marker_received', ({ playerId, x, y }) => {
+    const sender = state.players.find(p => p.id === playerId);
+    const senderName = sender ? sender.name : 'Jamoadosh';
+    showToast(`📍 ${senderName} belgi qo'ydi!`);
+    
+    state.activePings = state.activePings || [];
+    state.activePings.push({
+      id: Math.random(),
+      x,
+      y,
+      time: Date.now(),
+      duration: 5000
+    });
+    
+    sounds.play('click');
   });
 
   socket.on('pong', (clientTime) => {
@@ -620,6 +673,7 @@ function bindSocketEvents() {
 
   socket.on('lobby_reset', () => {
     state.running = false;
+    sounds.stopAmbient();
     if (state.animId) cancelAnimationFrame(state.animId);
     ui.overlay.style.display   = 'none';
     gameWrapper.style.display  = 'none';
@@ -1128,6 +1182,22 @@ async function openSettingsModal() {
     emojiMelee.value = customEmojis.melee || '😈';
     emojiGun.value = customEmojis.gun || '😡';
     emojiSniper.value = customEmojis.sniper || '🤬';
+
+    // Fetch and display player stats
+    try {
+      const stats = await api.getPlayerStats();
+      if (stats) {
+        document.getElementById('stat-wins').textContent = stats.total_wins || 0;
+        document.getElementById('stat-kills').textContent = stats.total_kills || 0;
+        document.getElementById('stat-games').textContent = stats.total_games || 0;
+        document.getElementById('stat-damage').textContent = stats.total_damage || 0;
+        document.getElementById('stat-streak').textContent = stats.best_streak || 0;
+        const winRatio = stats.total_games > 0 ? Math.round((stats.total_wins / stats.total_games) * 100) : 0;
+        document.getElementById('stat-ratio').textContent = winRatio + '%';
+      }
+    } catch (err) {
+      console.warn("Stats could not be loaded", err);
+    }
     
     // Open settings modal
     settingsModal.style.display = 'flex';
@@ -1577,6 +1647,43 @@ joinRoomBtn.onclick = () => {
   socket.emit('join_room', { name, color, roomCode, skin });
 };
 
+// Matchmaking button handler
+const matchmakingBtn = document.getElementById('matchmakingBtn');
+const matchmakingModal = document.getElementById('matchmakingModal');
+const cancelMatchmakingBtn = document.getElementById('cancelMatchmakingBtn');
+const matchmakingSearchStatus = document.getElementById('matchmakingSearchStatus');
+
+if (matchmakingBtn) {
+  matchmakingBtn.onclick = () => {
+    const name  = document.getElementById('nameInput')?.value.trim();
+    const color = ui.getSelectedColor();
+    const skin = ui.getSelectedSkin();
+    if (!name) return showToast('Ism kiriting!', 'error');
+    if (!socket) return showToast('Server bilan ulanish yo\'q', 'error');
+
+    // Show searching modal
+    matchmakingModal.style.display = 'flex';
+    
+    // Determine level if authenticated
+    let userLevelText = 'Mos keladigan skill guruhi qidirilmoqda...';
+    if (state.currentUser) {
+      const lvl = getLevelProgress(state.currentUser.xp || 0);
+      userLevelText = `Sizning darajangiz: Lv.${lvl.level} · ${lvl.name}`;
+    }
+    matchmakingSearchStatus.textContent = userLevelText;
+
+    socket.emit('matchmaking_search', { name, color, skin });
+  };
+}
+
+if (cancelMatchmakingBtn) {
+  cancelMatchmakingBtn.onclick = () => {
+    matchmakingModal.style.display = 'none';
+    socket?.disconnect();
+    initSocket(state.currentUser ? api.getToken() : null);
+  };
+}
+
 ui.startBtn.onclick = () => socket?.emit('start_game_request');
 
 leaveRoomBtn.onclick = () => {
@@ -1653,14 +1760,24 @@ document.getElementById('panelBackdrop')?.addEventListener('click', () => {
 });
 
 // ── Leaderboard ────────────────────────────────────────────
-async function openLeaderboard() {
+async function openLeaderboard(sort = 'wins') {
+  if (typeof sort !== 'string') sort = 'wins';
   const modal   = document.getElementById('leaderboardModal');
   const content = document.getElementById('leaderboardContent');
   modal.style.display = 'flex';
   content.innerHTML = '<div class="loading-spinner">Yuklanmoqda...</div>';
 
+  // Highlight active tab
+  const tabContainer = document.getElementById('leaderboardTabs');
+  if (tabContainer) {
+    tabContainer.querySelectorAll('.panel-tab').forEach(btn => {
+      if (btn.dataset.sort === sort) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
+  }
+
   try {
-    const leaders = await api.getLeaderboard();
+    const leaders = await api.getLeaderboard(sort);
     const meId    = state.currentUser?.id;
 
     content.innerHTML = leaders.map((u, i) => {
@@ -1668,21 +1785,31 @@ async function openLeaderboard() {
       const lvl   = getLevelProgress(u.xp || 0);
       const isMe  = u.id === meId;
       const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-        const avatarHTML = u.avatar
-          ? `<div class="lb-avatar" style="background:${u.color}"><img src="${u.avatar}" alt="${u.display_name || u.username}"></div>`
-          : `<div class="lb-avatar" style="background:${u.color}">${(u.display_name || u.username)[0].toUpperCase()}</div>`;
+      const avatarHTML = u.avatar
+        ? `<div class="lb-avatar" style="background:${u.color}"><img src="${u.avatar}" alt="${u.display_name || u.username}"></div>`
+        : `<div class="lb-avatar" style="background:${u.color}">${(u.display_name || u.username)[0].toUpperCase()}</div>`;
 
-        return `
-          <div class="lb-row ${isMe ? 'lb-me' : ''}">
-            <span class="lb-rank">${medal}</span>
-            ${avatarHTML}
-            <div class="lb-info">
-              <span class="lb-name">${u.display_name || u.username} ${isMe ? '<span class="you-badge">Siz</span>' : ''}</span>
-              <span class="lb-level" style="color:${LEVEL_COLORS[lvl.level]}">Lv.${lvl.level} ${LEVEL_NAMES[lvl.level]}</span>
-            </div>
+      // Determine statistic to display based on sort
+      let statDisplay = '';
+      if (sort === 'kills') {
+        statDisplay = `<span class="lb-wins">💀 ${u.kills || 0} o'ldirish</span>`;
+      } else if (sort === 'ratio') {
+        statDisplay = `<span class="lb-wins">📈 ${u.win_rate || 0}% W/L</span>`;
+      } else {
+        statDisplay = `<span class="lb-wins">🏆 ${u.wins || 0} g'alaba</span>`;
+      }
+
+      return `
+        <div class="lb-row ${isMe ? 'lb-me' : ''}">
+          <span class="lb-rank">${medal}</span>
+          ${avatarHTML}
+          <div class="lb-info">
+            <span class="lb-name">${u.display_name || u.username} ${isMe ? '<span class="you-badge">Siz</span>' : ''}</span>
+            <span class="lb-level" style="color:${LEVEL_COLORS[lvl.level]}">Lv.${lvl.level} ${LEVEL_NAMES[lvl.level]}</span>
+          </div>
           <div class="lb-stats">
-            <span class="lb-wins">🏆 ${u.wins}</span>
-            <span class="lb-games">${u.games_played} o'yin</span>
+            ${statDisplay}
+            <span class="lb-games">${u.games_played || 0} o'yin</span>
           </div>
         </div>`;
     }).join('') || '<div class="empty-state">Hali hech kim o\'ynamagan</div>';
@@ -1690,6 +1817,15 @@ async function openLeaderboard() {
     content.innerHTML = `<div class="error-state">${err.message}</div>`;
   }
 }
+
+// Bind Leaderboard tab click events
+document.getElementById('leaderboardTabs')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.panel-tab');
+  if (btn) {
+    const sort = btn.dataset.sort;
+    openLeaderboard(sort);
+  }
+});
 
 document.getElementById('closeLeaderboardBtn')?.addEventListener('click', () => {
   document.getElementById('leaderboardModal').style.display = 'none';
@@ -1949,6 +2085,7 @@ function update(dt) {
   ui.updateHUD(state.zoneTimer, alive, state.players.length, state.player);
   ui.updatePlayerList(state.players, state.player);
   ui.updateMiniLeaderboard(state.players);
+  ui.updateSquadPanel(state.players, state.player);
 
   // Update particles
   state.particles = state.particles.filter(p => {
@@ -1975,6 +2112,24 @@ function update(dt) {
   if (state.screenShake > 0) {
     state.screenShake -= dt * 30;
     if (state.screenShake < 0) state.screenShake = 0;
+  }
+
+  // Update active pings decay
+  if (state.activePings) {
+    state.activePings = state.activePings.filter(p => Date.now() - p.time < p.duration);
+  }
+
+  // Play low HP heartbeat sound
+  if (state.player && state.player.alive && state.player.hp < 20) {
+    sounds.playHeartbeat();
+  }
+
+  // Play storm burning sound if outside zone
+  if (state.player && state.player.alive) {
+    const distToZone = Math.hypot(state.player.x - state.zoneCx, state.player.y - state.zoneCy);
+    if (distToZone > state.zoneR) {
+      sounds.playZoneBurn();
+    }
   }
 }
 
@@ -2021,6 +2176,42 @@ function draw() {
         ctx.beginPath();
         ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
+      } else if (obs.t === 'heal_zone') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.2)'; // Green translucent
+        ctx.strokeStyle = '#2ecc71';
+        ctx.lineWidth = 4;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#2ecc71';
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.fillStyle = '#2ecc71';
+        ctx.font = 'bold 24px Outfit';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('➕', obs.x, obs.y);
+        ctx.restore();
+      } else if (obs.t === 'speed_zone') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(241, 196, 15, 0.15)'; // Yellow translucent
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 4;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = '#f1c40f';
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        ctx.fillStyle = '#f1c40f';
+        ctx.font = 'bold 24px Outfit';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', obs.x, obs.y);
         ctx.restore();
       } else if (obs.t === 'shield_wall') {
         ctx.save();
@@ -2126,29 +2317,58 @@ function draw() {
     state.airdrops.forEach(a => {
       ctx.save();
       ctx.translate(a.x, a.y);
-      if (!a.opened) {
-        // Red box
-        ctx.fillStyle = '#e74c3c';
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#e74c3c';
-        ctx.fillRect(-15, -15, 30, 30);
-        // Cross
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(-2, -10, 4, 20);
-        ctx.fillRect(-10, -2, 20, 4);
-        
-        // Upward glowing beam
-        ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(-10, 0);
-        ctx.lineTo(10, 0);
-        ctx.lineTo(25, -100);
-        ctx.lineTo(-25, -100);
-        ctx.fill();
+      
+      if (a.t === 'loot_crate') {
+        if (!a.opened) {
+          // Brown loot crate box
+          ctx.fillStyle = '#8B4513';
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#d35400';
+          ctx.fillRect(-11, -11, 22, 22);
+          
+          ctx.strokeStyle = '#d35400';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(-11, -11, 22, 22);
+          
+          ctx.fillStyle = '#f39c12';
+          ctx.fillRect(-2, -11, 4, 22);
+          
+          ctx.fillStyle = 'rgba(243, 156, 18, 0.25)';
+          ctx.beginPath();
+          ctx.moveTo(-7, 0);
+          ctx.lineTo(7, 0);
+          ctx.lineTo(15, -60);
+          ctx.lineTo(-15, -60);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = '#444';
+          ctx.fillRect(-11, -11, 22, 22);
+        }
       } else {
-        // Opened box
-        ctx.fillStyle = '#555';
-        ctx.fillRect(-15, -15, 30, 30);
+        if (!a.opened) {
+          // Red box
+          ctx.fillStyle = '#e74c3c';
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = '#e74c3c';
+          ctx.fillRect(-15, -15, 30, 30);
+          // Cross
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(-2, -10, 4, 20);
+          ctx.fillRect(-10, -2, 20, 4);
+          
+          // Upward glowing beam
+          ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(-10, 0);
+          ctx.lineTo(10, 0);
+          ctx.lineTo(25, -100);
+          ctx.lineTo(-25, -100);
+          ctx.fill();
+        } else {
+          // Opened box
+          ctx.fillStyle = '#555';
+          ctx.fillRect(-15, -15, 30, 30);
+        }
       }
       ctx.restore();
     });
@@ -2223,6 +2443,30 @@ function draw() {
   // Floating Texts
   state.floatingTexts.forEach(t => t.draw(ctx));
 
+  // Draw Active Pings (📍)
+  if (state.activePings) {
+    state.activePings.forEach(p => {
+      ctx.save();
+      const elapsed = Date.now() - p.time;
+      const pulse = 1 + Math.sin(elapsed / 150) * 0.3;
+      ctx.translate(p.x, p.y);
+      
+      // Pulsing circle
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 20 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Pin emoji
+      ctx.font = '24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('📍', 0, 5);
+      ctx.restore();
+    });
+  }
+
   ctx.restore();
 }
 
@@ -2244,14 +2488,120 @@ function drawMinimap() {
     minimapCtx.arc(state.zoneCx * scaleX, state.zoneCy * scaleY, state.zoneR * Math.max(scaleX, scaleY), 0, Math.PI * 2);
     minimapCtx.fill();
   }
+
+  // Draw safe zone border
+  minimapCtx.strokeStyle = 'rgba(255, 80, 80, 0.6)';
+  minimapCtx.lineWidth = 1.5;
+  minimapCtx.beginPath();
+  minimapCtx.arc(state.zoneCx * scaleX, state.zoneCy * scaleY, state.zoneR * Math.max(scaleX, scaleY), 0, Math.PI * 2);
+  minimapCtx.stroke();
+  
+  // Draw airdrops (blinking yellow dot)
+  if (state.airdrops) {
+    state.airdrops.forEach(a => {
+      if (a.opened) return;
+      const blink = Math.abs(Math.sin(Date.now() / 150));
+      minimapCtx.fillStyle = `rgba(241, 196, 15, ${0.3 + blink * 0.7})`;
+      minimapCtx.beginPath();
+      minimapCtx.arc(a.x * scaleX, a.y * scaleY, 4.5, 0, Math.PI * 2);
+      minimapCtx.fill();
+      
+      minimapCtx.strokeStyle = '#fff';
+      minimapCtx.lineWidth = 0.8;
+      minimapCtx.stroke();
+    });
+  }
   
   // Draw players
   state.players.forEach(p => {
     if (!p.alive) return;
     const isMain = state.player && p.id === state.player.id;
-    minimapCtx.fillStyle = isMain ? '#4da6ff' : '#e94560';
+    const isTeammate = state.player && p.squadId === state.player.squadId && !isMain;
+    
+    if (isMain) {
+      minimapCtx.fillStyle = '#4da6ff'; // Blue for self
+    } else if (isTeammate) {
+      minimapCtx.fillStyle = '#2ecc71'; // Green for teammate
+    } else {
+      minimapCtx.fillStyle = '#e94560'; // Red for enemy
+    }
+    
     minimapCtx.beginPath();
     minimapCtx.arc(p.x * scaleX, p.y * scaleY, isMain ? 3.5 : 2.5, 0, Math.PI * 2);
     minimapCtx.fill();
+  });
+
+  // Draw active pings (pulsing red dot)
+  if (state.activePings) {
+    state.activePings.forEach(p => {
+      const elapsed = Date.now() - p.time;
+      const scale = 1 + Math.sin(elapsed / 100) * 0.5;
+      minimapCtx.fillStyle = 'rgba(255, 51, 51, 0.8)';
+      minimapCtx.beginPath();
+      minimapCtx.arc(p.x * scaleX, p.y * scaleY, 4 * scale, 0, Math.PI * 2);
+      minimapCtx.fill();
+      
+      minimapCtx.strokeStyle = '#ffffff';
+      minimapCtx.lineWidth = 1;
+      minimapCtx.stroke();
+    });
+  }
+}
+
+// ── Minimap Interactivity (Drag, Zoom, Double-Click Ping) ──
+let isDraggingMinimap = false;
+let minimapDragOffset = { x: 0, y: 0 };
+const minimapContainer = document.getElementById('minimapContainer');
+
+if (minimapCanvas && minimapContainer) {
+  minimapCanvas.addEventListener('mousedown', (e) => {
+    if (e.detail > 1) return; // ignore double click
+    isDraggingMinimap = true;
+    const rect = minimapContainer.getBoundingClientRect();
+    minimapDragOffset.x = e.clientX - rect.left;
+    minimapDragOffset.y = e.clientY - rect.top;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (isDraggingMinimap && minimapContainer) {
+      const x = Math.max(0, Math.min(window.innerWidth - minimapContainer.offsetWidth, e.clientX - minimapDragOffset.x));
+      const y = Math.max(0, Math.min(window.innerHeight - minimapContainer.offsetHeight, e.clientY - minimapDragOffset.y));
+      
+      minimapContainer.style.right = 'auto';
+      minimapContainer.style.left = `${x}px`;
+      minimapContainer.style.top = `${y}px`;
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDraggingMinimap = false;
+  });
+
+  // Double click to ping
+  minimapCanvas.addEventListener('dblclick', (e) => {
+    const rect = minimapCanvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    const worldX = (clickX / minimapCanvas.offsetWidth) * GAME_CONFIG.WIDTH;
+    const worldY = (clickY / minimapCanvas.offsetHeight) * GAME_CONFIG.HEIGHT;
+    
+    socket?.emit('ping_marker', { x: worldX, y: worldY });
+  });
+
+  // Zoom controls
+  let minimapSize = 150;
+  document.getElementById('minimapZoomIn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    minimapSize = Math.min(250, minimapSize + 25);
+    minimapContainer.style.width = `${minimapSize}px`;
+    minimapContainer.style.height = `${minimapSize}px`;
+  });
+
+  document.getElementById('minimapZoomOut')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    minimapSize = Math.max(90, minimapSize - 25);
+    minimapContainer.style.width = `${minimapSize}px`;
+    minimapContainer.style.height = `${minimapSize}px`;
   });
 }

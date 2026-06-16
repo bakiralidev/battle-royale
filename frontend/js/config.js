@@ -50,7 +50,10 @@ export const WEAPON_TYPES = [
   { name: 'Miltiq', dmg: 20, color: '#e74c3c', emoji: '🪃', isRanged: true, maxAmmo: 6 },
   { name: 'Sniper', dmg: 40, color: '#9b59b6', emoji: '🎯', isRanged: true, maxAmmo: 3 },
   { name: 'Shotgun', dmg: 12, color: '#e67e22', emoji: '💥', isRanged: true, maxAmmo: 5 },
-  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true }
+  { name: 'Rocket', dmg: 50, color: '#c0392b', emoji: '🚀', isRanged: true, maxAmmo: 2, isExplosive: true },
+  { name: 'SMG', dmg: 8, color: '#2ecc71', emoji: '🔫', isRanged: true, maxAmmo: 20 },
+  { name: 'Granat', dmg: 35, color: '#f1c40f', emoji: '💣', isRanged: true, maxAmmo: 2, isExplosive: true },
+  { name: 'Kamon', dmg: 30, color: '#1abc9c', emoji: '🏹', isRanged: true, maxAmmo: 8 }
 ];
 
 export const GAME_CONFIG = {

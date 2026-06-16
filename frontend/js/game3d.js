@@ -3,6 +3,9 @@ export class Game3D {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x050510); // Darker night sky
+    
+    // Add Fog
+    this.scene.fog = new THREE.FogExp2(0x050510, 0x0012);
 
     // Camera - Smooth lerp properties
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 3000);
@@ -57,13 +60,17 @@ export class Game3D {
     this.zone = new THREE.Mesh(zoneGeo, zoneMat);
     this.scene.add(this.zone);
 
-    // Meshes map
+    // Meshes maps
     this.playerMeshes = {};
     this.obstacleMeshes = {};
     this.vehicleMeshes = {};
     this.itemMeshes = {};
     this.bulletMeshes = {};
     this.bombMeshes = {};
+    this.particleMeshes = {};
+    this.textMeshes = {};
+    this.pingMeshes = {};
+    this.airdropMeshes = {};
 
     // Atmospheric Dust Particles
     const particleCount = 1000;
@@ -93,39 +100,11 @@ export class Game3D {
     });
   }
 
-  createSpherePlayer(color) {
+  createPlayerMesh(p) {
     const group = new THREE.Group();
+    const color = p.color || '#ffffff';
+    const skin = p.skin || 'default';
     
-    // The main sphere body (the sticker)
-    const bodyGeo = new THREE.SphereGeometry(15, 32, 32);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.4 });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 18; // Above pedestal
-    body.castShadow = true;
-    body.receiveShadow = true;
-    group.add(body);
-
-    // Face elements (attached to body so they rotate with it)
-    // Eyes
-    const eyeGeo = new THREE.CylinderGeometry(2, 2, 2, 16);
-    eyeGeo.rotateX(Math.PI / 2);
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeR.position.set(5, 3, 14);
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-5, 3, 14);
-    body.add(eyeR);
-    body.add(eyeL);
-
-    // Mouth (A simple smile using a Torus segment)
-    const mouthGeo = new THREE.TorusGeometry(5, 1, 8, 16, Math.PI);
-    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    const mouth = new THREE.Mesh(mouthGeo, mouthMat);
-    mouth.position.set(0, -2, 14.5);
-    mouth.rotation.x = Math.PI; // flip to smile
-    body.add(mouth);
-
     // Pedestal (Gray base)
     const baseGeo = new THREE.CylinderGeometry(14, 16, 4, 32);
     const baseMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
@@ -134,7 +113,7 @@ export class Game3D {
     base.receiveShadow = true;
     group.add(base);
 
-    // Glowing Base Ring (Cyan)
+    // Glowing Base Ring
     const ringGeo = new THREE.TorusGeometry(18, 1.5, 8, 32);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -142,8 +121,92 @@ export class Game3D {
     ring.position.y = 1; 
     group.add(ring);
 
-    // Save refs for animation
-    group.userData = { body, ring, walkTime: 0 };
+    // Main Body (Capsule geometry for a premium look)
+    const bodyGeo = new THREE.CapsuleGeometry(10, 16, 8, 16);
+    let bodyMat;
+    
+    if (skin === 'ninja') {
+      bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }); // Black suit
+    } else if (skin === 'zombie') {
+      bodyMat = new THREE.MeshStandardMaterial({ color: 0x27ae60, roughness: 0.8 }); // Zombie Green
+    } else if (skin === 'robot') {
+      bodyMat = new THREE.MeshStandardMaterial({ color: 0x7f8c8d, metalness: 0.8, roughness: 0.2 }); // Shiny Metal
+    } else {
+      bodyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.4 });
+    }
+    
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 15; // Above pedestal
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+
+    // Face / Head details based on Skin
+    if (skin === 'ninja') {
+      // Red headband
+      const bandGeo = new THREE.CylinderGeometry(10.5, 10.5, 3, 16);
+      const bandMat = new THREE.MeshBasicMaterial({ color: 0xe74c3c });
+      const band = new THREE.Mesh(bandGeo, bandMat);
+      band.position.set(0, 5, 0);
+      body.add(band);
+
+      // Ninja Eyes (narrow slits)
+      const eyeGeo = new THREE.BoxGeometry(3, 1, 1);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
+      const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeR.position.set(3, 3, 9.5);
+      eyeR.rotation.y = 0.2;
+      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeL.position.set(-3, 3, 9.5);
+      eyeL.rotation.y = -0.2;
+      body.add(eyeR);
+      body.add(eyeL);
+    } else if (skin === 'zombie') {
+      // White/Red glowing eyes
+      const eyeGeo = new THREE.SphereGeometry(1.5, 8, 8);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+      const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeR.position.set(3, 4, 9.5);
+      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeL.position.set(-3, 4, 9.5);
+      body.add(eyeR);
+      body.add(eyeL);
+
+      // Open/scary mouth
+      const mouthGeo = new THREE.BoxGeometry(6, 2, 1);
+      const mouthMat = new THREE.MeshBasicMaterial({ color: 0x221111 });
+      const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+      mouth.position.set(0, -1, 9.5);
+      body.add(mouth);
+    } else if (skin === 'robot') {
+      // Cyber visor (cyan glow)
+      const visorGeo = new THREE.BoxGeometry(12, 3, 2);
+      const visorMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+      const visor = new THREE.Mesh(visorGeo, visorMat);
+      visor.position.set(0, 4, 9);
+      body.add(visor);
+    } else {
+      // Default: eyes + smile
+      const eyeGeo = new THREE.CylinderGeometry(1.8, 1.8, 1.5, 16);
+      eyeGeo.rotateX(Math.PI / 2);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      
+      const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeR.position.set(3.5, 3.5, 9.5);
+      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+      eyeL.position.set(-3.5, 3.5, 9.5);
+      body.add(eyeR);
+      body.add(eyeL);
+
+      const mouthGeo = new THREE.TorusGeometry(3.5, 0.8, 8, 16, Math.PI);
+      const mouthMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+      mouth.position.set(0, -0.5, 9.8);
+      mouth.rotation.x = Math.PI; // flip to smile
+      body.add(mouth);
+    }
+
+    group.userData = { body, ring, walkTime: 0, skin, color };
     return group;
   }
 
@@ -180,10 +243,15 @@ export class Game3D {
   update(state) {
     if (!state.player) return;
 
-    // Smooth Camera Lerp
-    this.cameraTarget.set(state.player.x, 500, state.player.y + 400);
-    this.camera.position.lerp(this.cameraTarget, 0.1);
-    this.camera.lookAt(state.player.x, 0, state.player.y);
+    // Third-Person Smooth Chase Camera (sitting behind player looking at player direction)
+    const camDist = 180;
+    const camHeight = 70;
+    const targetCamX = state.player.x - Math.cos(state.player.weaponAngle) * camDist;
+    const targetCamZ = state.player.y - Math.sin(state.player.weaponAngle) * camDist;
+    
+    this.cameraTarget.set(targetCamX, camHeight, targetCamZ);
+    this.camera.position.lerp(this.cameraTarget, 0.08); // smooth chase lerp
+    this.camera.lookAt(state.player.x, 15, state.player.y);
 
     // Animate atmospheric dust
     if (this.dustParticles) {
@@ -202,16 +270,29 @@ export class Game3D {
     this.zone.position.set(state.zoneCx, 100, state.zoneCy);
     this.zone.scale.set(state.zoneR, 1, state.zoneR);
     this.zone.rotation.y += 0.002; // Rotate zone slowly
+    this.zone.material.opacity = 0.15 + Math.sin(performance.now() * 0.003) * 0.05;
 
     // Update Players
     const currentPlayers = new Set();
     state.players.forEach(p => {
       currentPlayers.add(p.id);
+      
+      // If skin or color changes, recreate player mesh to reflect selected customization
+      let recreate = false;
+      if (this.playerMeshes[p.id]) {
+        const cached = this.playerMeshes[p.id].userData;
+        if (cached.skin !== p.skin || cached.color !== p.color) {
+          this.scene.remove(this.playerMeshes[p.id]);
+          delete this.playerMeshes[p.id];
+          recreate = true;
+        }
+      }
+
       if (!this.playerMeshes[p.id]) {
-        const mesh = this.createSpherePlayer(p.color || 0xffffff);
+        const mesh = this.createPlayerMesh(p);
         
         // Add floating name tag
-        const nameText = `[${p.level || 1}] ${p.username || 'Bot'}`;
+        const nameText = `[${p.level || 1}] ${p.name || 'Bot'}`;
         const nameSprite = this.createTextSprite(nameText);
         mesh.add(nameSprite);
         mesh.userData.nameSprite = nameSprite;
@@ -223,7 +304,7 @@ export class Game3D {
       const group = this.playerMeshes[p.id];
 
       // Update text if level changes
-      const currentText = `[${p.level || 1}] ${p.username || 'Bot'}`;
+      const currentText = `[${p.level || 1}] ${p.name || 'Bot'}`;
       if (group.userData.lastText !== currentText) {
          group.remove(group.userData.nameSprite);
          const newSprite = this.createTextSprite(currentText);
@@ -249,16 +330,28 @@ export class Game3D {
       if (isMoving) {
         group.userData.walkTime += 0.2;
         const wave = Math.sin(group.userData.walkTime);
-        group.userData.body.position.y = 18 + Math.abs(wave) * 3;
+        group.userData.body.position.y = 15 + Math.abs(wave) * 3;
         group.userData.body.rotation.z = Math.sin(group.userData.walkTime * 0.5) * 0.1;
       } else {
-        group.userData.body.position.y = 18;
+        group.userData.body.position.y = 15;
         group.userData.body.rotation.z = 0;
         group.userData.walkTime = 0;
       }
 
-      // Pulse the ring
+      // Update Ring Color & Pulsing
       if (group.userData.ring) {
+        const isMain = state.player && p.id === state.player.id;
+        const isTeammate = state.player && p.squadId === state.player.squadId && !isMain;
+        
+        const ringMat = group.userData.ring.material;
+        if (isMain) {
+          ringMat.color.setHex(0x00ffff); // cyan for player
+        } else if (isTeammate) {
+          ringMat.color.setHex(0x2ecc71); // green for teammate
+        } else {
+          ringMat.color.setHex(0xe94560); // red for enemy
+        }
+
         const scale = 1 + Math.sin(performance.now() * 0.005) * 0.1;
         group.userData.ring.scale.set(scale, scale, scale);
       }
@@ -295,6 +388,16 @@ export class Game3D {
             const mat = new THREE.MeshPhysicalMaterial({ color: 0x3498db, transparent: true, opacity: 0.5, transmission: 0.5, roughness: 0.1 });
             mesh = new THREE.Mesh(geo, mat);
             mesh.position.y = o.radius || o.r;
+          } else if (o.t === 'heal_zone') {
+            const geo = new THREE.CylinderGeometry(o.radius || o.r, o.radius || o.r, 2, 32, 1, false);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x2ecc71, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = 1;
+          } else if (o.t === 'speed_zone') {
+            const geo = new THREE.CylinderGeometry(o.radius || o.r, o.radius || o.r, 2, 32, 1, false);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xf1c40f, transparent: true, opacity: 0.20, side: THREE.DoubleSide });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = 1;
           } else {
             const geo = new THREE.BoxGeometry(20, 20, 20);
             const mat = new THREE.MeshStandardMaterial({ color: 0x555555 });
@@ -330,11 +433,16 @@ export class Game3D {
         if (!this.itemMeshes[it.id]) {
             const geo = new THREE.OctahedronGeometry(12, 0);
             let color = 0xffffff;
-            if (it.type === 'Pistolet') color = 0xff3333;
-            else if (it.type === 'Miltiq') color = 0x33ff33;
-            else if (it.type === 'Sniper') color = 0x3333ff;
-            else if (it.type === 'medkit') color = 0xff33ff;
+            if (it.wt && it.wt.name) {
+              const name = it.wt.name;
+              if (name === 'Pistolet' || name === 'SMG') color = 0xff3333;
+              else if (name === 'Miltiq' || name === 'Kamon') color = 0x33ff33;
+              else if (name === 'Sniper') color = 0x3333ff;
+              else if (name === 'Shotgun') color = 0xe67e22;
+              else if (name === 'Rocket' || name === 'Granat') color = 0xc0392b;
+            } else if (it.type === 'medkit') color = 0xff33ff;
             else if (it.type === 'shield') color = 0x33ffff;
+            else if (it.type === 'speed_boost') color = 0xffff33;
             
             const mat = new THREE.MeshStandardMaterial({ 
               color: color, 
@@ -401,6 +509,138 @@ export class Game3D {
       if (!currentBullets.has(id)) {
         this.scene.remove(this.bulletMeshes[id]);
         delete this.bulletMeshes[id];
+      }
+    });
+
+    // Blood / Hit Particles in 3D
+    const currentParticles = new Set();
+    state.particles.forEach(p => {
+      if (!p.id) p.id = Math.random();
+      currentParticles.add(p.id);
+      
+      if (!this.particleMeshes[p.id]) {
+        const geo = new THREE.BoxGeometry(2, 2, 2);
+        const mat = new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 1 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(p.x, 15, p.y);
+        this.scene.add(mesh);
+        this.particleMeshes[p.id] = mesh;
+      }
+      
+      const mesh = this.particleMeshes[p.id];
+      mesh.position.set(p.x, 15 - p.vy * 0.1, p.y); // visual height offset based on 2D gravity simulation
+      mesh.material.opacity = Math.max(0, p.life / p.maxLife);
+    });
+
+    Object.keys(this.particleMeshes).forEach(id => {
+      if (!currentParticles.has(Number(id))) {
+        this.scene.remove(this.particleMeshes[id]);
+        delete this.particleMeshes[id];
+      }
+    });
+
+    // Floating damage numbers in 3D space
+    const currentTexts = new Set();
+    state.floatingTexts.forEach(t => {
+      if (!t.id) t.id = Math.random();
+      currentTexts.add(t.id);
+      
+      if (!this.textMeshes[t.id]) {
+        const sprite = this.createTextSprite(t.text);
+        sprite.material.color.set(t.color);
+        sprite.position.set(t.x, 35, t.y);
+        this.scene.add(sprite);
+        this.textMeshes[t.id] = sprite;
+      }
+      
+      const sprite = this.textMeshes[t.id];
+      sprite.position.y = 35 + (t.maxLife - t.life) * 45; // float upwards
+      sprite.material.opacity = Math.max(0, t.life / t.maxLife);
+    });
+
+    Object.keys(this.textMeshes).forEach(id => {
+      if (!currentTexts.has(Number(id))) {
+        this.scene.remove(this.textMeshes[id]);
+        delete this.textMeshes[id];
+      }
+    });
+
+    // Render active pings in 3D
+    const currentPings = new Set();
+    if (state.activePings) {
+      state.activePings.forEach(p => {
+        currentPings.add(p.id);
+        
+        if (!this.pingMeshes[p.id]) {
+          const sprite = this.createTextSprite('📍');
+          sprite.position.set(p.x, 30, p.y);
+          this.scene.add(sprite);
+          this.pingMeshes[p.id] = sprite;
+        }
+        
+        const sprite = this.pingMeshes[p.id];
+        const elapsed = Date.now() - p.time;
+        sprite.position.y = 30 + Math.sin(elapsed / 150) * 5; // bounce animation
+        sprite.scale.set(30, 30, 1);
+      });
+    }
+
+    Object.keys(this.pingMeshes).forEach(id => {
+      if (!currentPings.has(Number(id))) {
+        this.scene.remove(this.pingMeshes[id]);
+        delete this.pingMeshes[id];
+      }
+    });
+
+    // Airdrops and Loot Crates
+    const currentAirdrops = new Set();
+    if (state.airdrops) {
+      state.airdrops.forEach(a => {
+        currentAirdrops.add(a.i);
+        if (!this.airdropMeshes[a.i]) {
+          let mesh;
+          if (a.t === 'loot_crate') {
+            const geo = new THREE.BoxGeometry(20, 20, 20);
+            const mat = new THREE.MeshStandardMaterial({ 
+              color: a.o ? 0x444444 : 0x8B4513, 
+              roughness: 0.9 
+            });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = 10;
+          } else {
+            const geo = new THREE.BoxGeometry(30, 30, 30);
+            const mat = new THREE.MeshStandardMaterial({ 
+              color: a.o ? 0x555555 : 0xe74c3c, 
+              roughness: 0.7 
+            });
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = 15;
+            
+            if (!a.o) {
+              const light = new THREE.PointLight(0xe74c3c, 1, 60);
+              light.position.set(0, 20, 0);
+              mesh.add(light);
+            }
+          }
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          this.scene.add(mesh);
+          this.airdropMeshes[a.i] = mesh;
+        }
+        const mesh = this.airdropMeshes[a.i];
+        mesh.position.x = a.x;
+        mesh.position.z = a.y;
+        
+        if (a.o) {
+          mesh.material.color.setHex(a.t === 'loot_crate' ? 0x444444 : 0x555555);
+        }
+      });
+    }
+
+    Object.keys(this.airdropMeshes).forEach(id => {
+      if (!currentAirdrops.has(Number(id)) && !currentAirdrops.has(id)) {
+        this.scene.remove(this.airdropMeshes[id]);
+        delete this.airdropMeshes[id];
       }
     });
 
