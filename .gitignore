@@ -11,21 +11,23 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Database
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE Logs and Settings
+# IDE
 .idea/
 .vscode/
+
+# Other
 .gemini/
 .system_generated/
 *.log
-
-# Database
-*.sqlite
-*.sqlite3
-backend/battle_royale.db
-*.db
-*.db-wal
-*.db-shm
