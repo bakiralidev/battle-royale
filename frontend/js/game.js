@@ -356,12 +356,21 @@ function bindSocketEvents() {
     ui.overlay.style.display = 'none';
     
     if (is3DMode) {
-      canvas.style.display = 'none';
-      const canvas3d = document.getElementById('gameCanvas3D');
-      canvas3d.style.display = 'block';
-      canvas3d.focus();
-      if (!game3DEngine) {
-        game3DEngine = new Game3D(canvas3d);
+      if (typeof THREE === 'undefined') {
+        showToast("Three.js (3D kutubxona) yuklanmadi! Internet aloqasini tekshiring.", "error");
+        is3DMode = false;
+        canvas.style.display = 'block';
+        document.getElementById('gameCanvas3D').style.display = 'none';
+        canvas.focus();
+      } else {
+        canvas.style.display = 'none';
+        const canvas3d = document.getElementById('gameCanvas3D');
+        canvas3d.style.display = 'block';
+        canvas3d.focus();
+        if (!game3DEngine) {
+          game3DEngine = new Game3D(canvas3d);
+          window.game3DEngine = game3DEngine;
+        }
       }
     } else {
       canvas.style.display = 'block';

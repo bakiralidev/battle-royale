@@ -5,7 +5,7 @@ export class Game3D {
     this.scene.background = new THREE.Color(0x050510); // Darker night sky
     
     // Add Fog
-    this.scene.fog = new THREE.FogExp2(0x050510, 0x0012);
+    // this.scene.fog = new THREE.FogExp2(0x050510, 0.0012);
 
     // Camera - Smooth lerp properties
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 3000);
@@ -242,7 +242,7 @@ export class Game3D {
 
   update(state) {
     if (!state.player) return;
-
+    
     // Third-Person Smooth Chase Camera (sitting behind player looking at player direction)
     const camDist = 180;
     const camHeight = 70;
